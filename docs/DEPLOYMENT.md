@@ -1,0 +1,92 @@
+# Deployment — Supabase (API + DB) and HostGator (static site)
+
+Nothing here has been deployed yet. You need: the new FLY WING Supabase account, the domain on HostGator, and the
+admin wallet address(es).
+
+## 1. Supabase project
+
+1. Sign in to https://supabase.com with the FLY WING Google account and create a project (e.g. `flywing`). Save the
+   database password. Note the **project ref** (the `xxxx` in `https://xxxx.supabase.co`).
+2. Apply the migration. Pick one:
+   - **Dashboard:** SQL Editor → paste `supabase/migrations/20261012000000_allowlist_registration.sql` → Run.
+   - **CLI:** `npx supabase login` → `npx supabase link --project-ref <ref>` → `npx supabase db push`.
+3. Check that **Settings → API → Exposed schemas** does **not** include `allowlist` (the default is `public, graphql_public`).
+
+> Free-tier projects pause after about a week without traffic, which would take registration offline. For a live
+> campaign, either upgrade to Pro (also adds daily backups) or make sure the site gets regular traffic. Download a CSV
+> export regularly either way.
+
+## 2. Function secrets
+
+```bash
+npx supabase secrets set --project-ref <ref> \
+  ALLOWED_ORIGINS="https://<your-domain>,https://www.<your-domain>" \
+  ADMIN_WALLETS="0xAdminWallet1,0xAdminWallet2" \
+  IP_HASH_SALT="$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")"
+```
+
+Optional:
+
+| Secret | Default | Notes |
+|---|---|---|
+| `ALLOWED_CHAIN_IDS` | `1,8453,42161,10,137,4663,46630` | Chains a wallet may sign on. Must match `web/src/lib/wagmi.ts`. |
+| `RPC_URLS` | viem public RPCs | `8453=https://...,1=https://...`. Only used for smart-contract-wallet signatures. Use a paid RPC (Alchemy etc.) if you see failures. |
+| `CAMPAIGN_ID` | `fwg-genesis` | |
+| `NONCE_TTL_SECONDS` / `SESSION_TTL_SECONDS` / `ADMIN_SESSION_TTL_SECONDS` | 600 / 7200 / 3600 | |
+
+`SUPABASE_DB_URL` is provided to Edge Functions automatically. **Never put the service-role key or DB URL in the site.**
+
+## 3. Deploy the function
+
+```bash
+npx supabase functions deploy allowlist --project-ref <ref> --no-verify-jwt --use-api
+```
+
+`--no-verify-jwt` is required: the function does its own wallet authentication (also set in `supabase/config.toml`).
+`--use-api` bundles on Supabase's side so Docker isn't needed locally.
+
+Smoke test (uses throwaway wallets; the admin part is optional):
+
+```bash
+curl -H "origin: https://<your-domain>" https://<ref>.supabase.co/functions/v1/allowlist/campaign
+API_URL=https://<ref>.supabase.co/functions/v1/allowlist ORIGIN=https://<your-domain> npm run smoke
+```
+
+This creates one test registration (handle `Smoke_Renamed`). Delete it afterwards in the SQL editor:
+`delete from allowlist.registrations where twitter_username_normalized = 'smoke_renamed';`
+
+## 4. Build the site
+
+1. (Recommended, for phones without a wallet browser) create a free WalletConnect/Reown project at
+   https://cloud.reown.com and add your domain to its allowed domains.
+2. Create `.env.production`:
+
+   ```
+   VITE_API_URL=https://<ref>.supabase.co/functions/v1/allowlist
+   VITE_WALLETCONNECT_PROJECT_ID=<reown project id>
+   ```
+3. `npm run build`. This outputs `dist/`.
+
+## 5. Upload to HostGator
+
+1. cPanel → **SSL/TLS Status** → make sure AutoSSL has issued a certificate for the domain (and `www`).
+2. cPanel → File Manager → `public_html/` (or the domain's document root). Turn on **Settings → Show Hidden Files**.
+3. Upload **everything inside `dist/`**, including **`.htaccess`**. It redirects to HTTPS and routes
+   `/admin/allowlist` to the app.
+4. Once HTTPS works, uncomment the `Strict-Transport-Security` line in `.htaccess`.
+
+## 6. Verify for real
+
+- Open the site on desktop with a browser wallet: register, refresh, and confirm "Wallet Already Registered".
+- Open it on a phone, inside the wallet app's browser and via WalletConnect.
+- `/admin/allowlist`: sign in with an admin wallet, edit a status, Export CSV, and open the file in Excel or Google Sheets.
+- After the first real traffic, check that rate limiting sees real client IPs: in the SQL editor,
+  `select bucket, count(distinct key) from allowlist.rate_limits group by 1;` should show many keys, not one.
+  If it shows one, every visitor shares a limit and the IP header handling in `clientIp()` needs adjusting.
+
+## Operating
+
+- **Close registration:** `update allowlist.campaigns set status = 'closed' where id = 'fwg-genesis';`
+  (or set `closes_at`). Registered wallets can still check their status.
+- **Add/remove admins:** update the `ADMIN_WALLETS` secret. Removal takes effect on the admin's next request.
+- **Remove a registrant on request:** set status `removed` with a note, or delete the row (its audit rows cascade).

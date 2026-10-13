@@ -1,0 +1,50 @@
+{
+  "name": "flywing-mint-site",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "tsx --env-file-if-exists=.env server/dev.ts",
+    "dev:web": "vite",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "test": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "pg:server": "tsx scripts/pg-server.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "e2e:ui": "tsx scripts/ui-e2e.ts"
+  },
+  "dependencies": {
+    "@base-org/account": "^2.5.13",
+    "@fontsource/dela-gothic-one": "^5.3.0",
+    "@fontsource/dm-mono": "^5.3.0",
+    "@fontsource/zen-kaku-gothic-new": "^5.3.1",
+    "@tanstack/react-query": "^5.104.2",
+    "@walletconnect/ethereum-provider": "^2.26.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "viem": "2.57.4",
+    "wagmi": "^3.7.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.9",
+    "@electric-sql/pglite-socket": "^0.2.12",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^10.0.6",
+    "playwright": "^1.64.0",
+    "postgres": "^3.4.9",
+    "sharp": "^0.35.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.4"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "sharp@0.35.5": true
+  }
+}

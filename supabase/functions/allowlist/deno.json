@@ -1,0 +1,8 @@
+{
+  "imports": {
+    "viem": "npm:viem@2.57.4",
+    "viem/siwe": "npm:viem@2.57.4/siwe",
+    "viem/chains": "npm:viem@2.57.4/chains",
+    "postgres": "npm:postgres@3.4.9"
+  }
+}

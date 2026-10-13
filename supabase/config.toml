@@ -1,0 +1,8 @@
+# Supabase CLI config for FLY WING GENESIS. Only the bits this project needs.
+project_id = "flywing-mint-site"
+
+[functions.allowlist]
+# The function does its own wallet (SIWE) authentication with bearer session
+# tokens, so Supabase's JWT gate is turned off for it. It never trusts the anon key.
+verify_jwt = false
+import_map = "./functions/allowlist/deno.json"
