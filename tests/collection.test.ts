@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import { COLLECTION } from "../web/src/lib/collection";
 
 // The landing page's supply facts must match the canonical Nimbus project config. The check
-// runs where the nimbus-generator repo sits beside this one (the owner's machine) and is
-// skipped elsewhere.
-const NIMBUS = process.env.NIMBUS_PROJECT_JSON ?? "../nimbus-generator/projects/fly-wing-genesis/project.json";
+// runs on the owner's machine (this repo at C:/Projectwork/FlyWingGenesis/mint-site, nimbus-generator at
+// C:/Projectwork/nimbus-generator) and is skipped elsewhere.
+const NIMBUS = process.env.NIMBUS_PROJECT_JSON ?? "../../nimbus-generator/projects/fly-wing-genesis/project.json";
 
 describe("collection facts", () => {
   it.skipIf(!existsSync(NIMBUS))("match nimbus-generator's FLY WING GENESIS project config", () => {
