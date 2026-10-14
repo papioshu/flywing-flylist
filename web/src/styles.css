@@ -372,15 +372,16 @@ a {
   clip-path: polygon(22px 0, 100% 0, 100% 100%, 0 100%, 0 22px);
 }
 
-.stub__word {
-  font-family: var(--brush);
-  text-transform: uppercase;
-  font-size: 44px;
-  line-height: 1;
-  letter-spacing: -0.1em;
-  color: var(--white);
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
+/* Boarding-pass barcode (Code 39) running down the stub: black bars on a white label. */
+.stub__barcode {
+  flex: 1;
+  width: 54px;
+  min-height: 180px;
+  max-height: 440px;
+  padding: 10px 8px;
+  color: var(--black);
+  background: var(--white);
+  border-radius: 2px;
 }
 
 .pass__head {

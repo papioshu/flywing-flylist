@@ -4,6 +4,7 @@ import { useAccount, useDisconnect, useSignMessage, useSwitchChain } from "wagmi
 import { api, ApiError, type Campaign, type Eligibility, type PublicRegistration } from "../lib/api";
 import { clearToken, getToken, isUserRejection, parseHandle, shortAddress, signIn } from "../lib/session";
 import { FALLBACK_CHAIN_ID, SUPPORTED_CHAIN_IDS } from "../lib/wagmi";
+import { Barcode } from "./Barcode";
 import { WalletPicker } from "./WalletPicker";
 
 // The FLYLIST flow. Nothing here runs on page load, wallet connect or wallet change:
@@ -236,7 +237,7 @@ export function FlylistApply({ campaign }: { campaign: Campaign | null }) {
             </div>
             <aside className="pass__stub" aria-hidden>
               <img src="/brand/fly-wing-mark-white.svg" alt="" width={44} height={51} />
-              <span className="stub__word">Flylist</span>
+              <Barcode className="stub__barcode" value="FLYLIST" />
             </aside>
           </div>
         </div>,

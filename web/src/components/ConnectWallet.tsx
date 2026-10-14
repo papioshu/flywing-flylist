@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAccount, useDisconnect } from "wagmi";
 import { shortAddress } from "../lib/session";
+import { Barcode } from "./Barcode";
 import { WalletPicker } from "./WalletPicker";
 
 // Standalone CONNECT WALLET. It only connects (or disconnects) a wallet: it never starts the
@@ -95,7 +96,7 @@ export function ConnectWallet() {
               </div>
               <aside className="pass__stub" aria-hidden>
                 <img src="/brand/fly-wing-mark-white.svg" alt="" width={44} height={51} />
-                <span className="stub__word">Wallet</span>
+                <Barcode className="stub__barcode" value="FLYWING" />
               </aside>
             </div>
           </div>,
