@@ -18,6 +18,15 @@ type Row = {
   updatedAt: string;
   verificationChainId: number;
   adminNotes: string | null;
+  accessMethod: string;
+  eligibilityChainId: number | null;
+  ethBalanceWei: string | null;
+  ethBalanceEth: string | null;
+  ethUsdPrice: string | null;
+  ethUsdPriceSource: string | null;
+  ethUsdPriceAt: string | null;
+  balanceUsd: string | null;
+  campaignId: string;
   handleSharedCount?: number;
 };
 type Stats = {
@@ -30,15 +39,23 @@ type Stats = {
 };
 type Audit = { id: number; actorWallet: string; actorRole: string; action: string; changes: Record<string, { from: unknown; to: unknown }>; createdAt: string };
 
-const REG = ["registered", "approved", "waitlisted", "rejected", "removed"];
-const ELIG = ["not_checked", "eligible", "ineligible"];
+const REG = ["registered", "pending_verification", "eligible", "ineligible", "approved", "rejected"];
+const ELIG = ["not_checked", "pending", "eligible", "ineligible"];
+const CHAIN: Record<number, string> = { 1: "Ethereum", 4663: "Robinhood" };
 const COLUMNS: { key: string; label: string; sortable: boolean }[] = [
   { key: "registeredAt", label: "Registered (UTC)", sortable: true },
   { key: "walletAddress", label: "Wallet", sortable: true },
   { key: "twitterUsername", label: "X username", sortable: true },
   { key: "registrationStatus", label: "Status", sortable: true },
   { key: "eligibilityStatus", label: "Eligibility", sortable: true },
+  { key: "balance", label: "ETH at registration", sortable: false },
   { key: "notes", label: "Notes", sortable: false },
+];
+// Server-side presets. "Final mint allowlist" is approved-only; pending or merely eligible wallets never appear in it.
+const EXPORTS: { preset: string; label: string }[] = [
+  { preset: "pending_verification", label: "Pending verification" },
+  { preset: "eligible", label: "Eligible + approved" },
+  { preset: "final", label: "Final mint allowlist (approved only)" },
 ];
 
 const fmt = (iso: string) => iso.replace("T", " ").slice(0, 16);
@@ -89,7 +106,7 @@ export function AdminPage() {
         <a className="wordmark" href="/">
           FLY WING <span>GENESIS</span>
         </a>
-        <span className="pill pill--dark">Allowlist admin</span>
+        <span className="pill pill--dark">FLYLIST admin</span>
         {address && (
           <span className="topbar__who mono">
             {shortAddress(address)}{" "}
@@ -211,11 +228,13 @@ function Dashboard({ token, onAuthLost }: { token: string; onAuthLost: (msg: str
     load();
   }, [load]);
 
-  async function exportCsv() {
+  async function exportCsv(preset?: string) {
     setExporting(true);
     setError(null);
     try {
-      await download(`/admin/export.csv?${filterQuery()}`, token, `flywing-allowlist-${new Date().toISOString().slice(0, 10)}.csv`);
+      // Presets export the whole dataset for that status set; the main button respects the current filters.
+      const q = preset ? new URLSearchParams({ preset }) : filterQuery();
+      await download(`/admin/export.csv?${q}`, token, `flylist-${preset ?? "all"}-${new Date().toISOString().slice(0, 10)}.csv`);
     } catch (e) {
       handle(e);
     } finally {
@@ -237,12 +256,20 @@ function Dashboard({ token, onAuthLost }: { token: string; onAuthLost: (msg: str
     <>
       <div className="admin__head">
         <div>
-          <h1 className="admin__title">{stats?.campaign.name ?? "Allowlist"}</h1>
+          <h1 className="admin__title">{stats?.campaign.name ?? "FLYLIST"}</h1>
           {stats && <p className="muted">Registration is {stats.campaign.isOpen ? "open" : "closed"}.</p>}
         </div>
-        <button className="btn btn--primary btn--export" onClick={exportCsv} disabled={exporting}>
+        <button className="btn btn--primary btn--export" onClick={() => exportCsv()} disabled={exporting}>
           {exporting ? "Exporting…" : filtered ? `Export CSV (${total} matching)` : "Export CSV"}
         </button>
+      </div>
+      <div className="exports">
+        <span className="muted">Full-dataset exports:</span>
+        {EXPORTS.map((x) => (
+          <button key={x.preset} className="link" onClick={() => exportCsv(x.preset)} disabled={exporting}>
+            {x.label}
+          </button>
+        ))}
       </div>
 
       {stats && (
@@ -250,8 +277,9 @@ function Dashboard({ token, onAuthLost }: { token: string; onAuthLost: (msg: str
           <Stat label="Total registrations" value={stats.total} />
           <Stat label="Today (UTC)" value={stats.today} />
           <Stat label="Unique wallets" value={stats.uniqueWallets} />
+          <Stat label="Eligible" value={stats.byRegistrationStatus.eligible ?? 0} />
+          <Stat label="Pending verification" value={stats.byRegistrationStatus.pending_verification ?? 0} />
           <Stat label="Approved" value={stats.byRegistrationStatus.approved ?? 0} />
-          <Stat label="Eligible" value={stats.byEligibilityStatus.eligible ?? 0} />
         </div>
       )}
 
@@ -261,7 +289,7 @@ function Dashboard({ token, onAuthLost }: { token: string; onAuthLost: (msg: str
           <option value="">All statuses</option>
           {REG.map((s) => (
             <option key={s} value={s}>
-              {s}
+              {s.replace("_", " ")}
             </option>
           ))}
         </select>
@@ -320,10 +348,14 @@ function Dashboard({ token, onAuthLost }: { token: string; onAuthLost: (msg: str
                   {(r.handleSharedCount ?? 1) > 1 && <span className="tag tag--warn" title="Same X username on multiple wallets">×{r.handleSharedCount}</span>}
                 </td>
                 <td data-label="Status">
-                  <span className={`tag tag--${r.registrationStatus}`}>{r.registrationStatus}</span>
+                  <span className={`tag tag--${r.registrationStatus}`}>{r.registrationStatus.replace("_", " ")}</span>
                 </td>
                 <td data-label="Eligibility">
                   <span className={`tag tag--${r.eligibilityStatus}`}>{r.eligibilityStatus.replace("_", " ")}</span>
+                </td>
+                <td className="mono" data-label="ETH" title={r.ethBalanceWei ? `${r.ethBalanceWei} wei` : undefined}>
+                  {r.balanceUsd ? `$${r.balanceUsd}` : "—"}
+                  {r.eligibilityChainId && <span className="muted"> · {CHAIN[r.eligibilityChainId] ?? r.eligibilityChainId}</span>}
                 </td>
                 <td data-label="Notes" className="notes-cell">
                   {r.adminNotes}
@@ -443,12 +475,27 @@ function Editor({
           <a href={row.twitterUrl} target="_blank" rel="noreferrer noopener">
             {row.twitterUrl}
           </a>{" "}
-          <span className="muted">({row.twitterVerified ? "verified" : "self-reported"})</span>
+          <span className="muted">({row.twitterVerified ? "verified" : "self-reported, unverified"})</span>
         </dd>
         <dt>Registered</dt>
         <dd className="mono">{row.registeredAt}</dd>
-        <dt>Verified on chain</dt>
+        <dt>Campaign</dt>
+        <dd className="mono">{row.campaignId}</dd>
+        <dt>Access method</dt>
+        <dd className="mono">{row.accessMethod}</dd>
+        <dt>Signed in on chain</dt>
         <dd className="mono">{row.verificationChainId}</dd>
+        <dt>ETH balance</dt>
+        <dd className="mono">
+          {row.ethBalanceEth ?? "—"} ETH{row.ethBalanceWei ? ` (${row.ethBalanceWei} wei)` : ""}
+          {row.eligibilityChainId ? ` on chain ${row.eligibilityChainId}` : ""}
+        </dd>
+        <dt>ETH/USD used</dt>
+        <dd className="mono">
+          {row.ethUsdPrice ? `$${row.ethUsdPrice} (${row.ethUsdPriceSource}, ${row.ethUsdPriceAt})` : "—"}
+        </dd>
+        <dt>USD at registration</dt>
+        <dd className="mono">{row.balanceUsd ? `$${row.balanceUsd}` : "—"}</dd>
       </dl>
       <label className="form__label">Registration status</label>
       <select className="field" value={status} onChange={(e) => setStatus(e.target.value)}>

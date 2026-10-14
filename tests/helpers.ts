@@ -4,6 +4,7 @@ import { openPglite } from "../server/pglite.ts";
 import { createApp } from "../supabase/functions/_shared/app.ts";
 import { loadConfig } from "../supabase/functions/_shared/config.ts";
 import { createSignatureVerifier } from "../supabase/functions/_shared/siwe.ts";
+import { createFakeNet } from "./fakeNet.ts";
 
 export const ORIGIN = "https://flywing.test";
 
@@ -18,7 +19,9 @@ export async function setup(opts: { env?: Record<string, string>; dataDir?: stri
   const config = loadConfig((n) => env[n]);
   const db = await openPglite(opts.dataDir);
   let clock = new Date("2026-10-12T12:00:00Z").getTime();
+  const net = createFakeNet(config.eligibilityRpcUrls, () => clock);
   const app = createApp({
+    fetch: net.fetch,
     db,
     config,
     verifySignature: createSignatureVerifier({}, false), // offline only in tests
@@ -83,6 +86,7 @@ export async function setup(opts: { env?: Record<string, string>; dataDir?: stri
   return {
     app,
     db,
+    net,
     config,
     admin,
     call,

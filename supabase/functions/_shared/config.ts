@@ -1,6 +1,8 @@
 // Runtime configuration, read from environment variables (Supabase function
 // secrets in production, process.env in local dev/tests).
 
+import { CHAINLINK_ETH_USD_MAINNET, DEFAULT_ELIGIBILITY_RPC_URLS } from "./eligibility.ts";
+
 export type AppConfig = {
   campaignId: string;
   /** Exact browser origins allowed to call the API and to appear in SIWE messages, e.g. https://flywing.xyz */
@@ -16,6 +18,16 @@ export type AppConfig = {
   nonceTtlSeconds: number;
   sessionTtlSeconds: number;
   adminSessionTtlSeconds: number;
+  /** RPCs for eligibility reads (balances + Chainlink). Defaults merged with RPC_URLS overrides. */
+  eligibilityRpcUrls: Record<number, string>;
+  chainlinkEthUsdFeed: `0x${string}`;
+  /** Reject a Chainlink price older than this (ETH/USD mainnet heartbeat is 3600s). */
+  priceMaxAgeSeconds: number;
+  /** How long an eligible/ineligible result is reused for the same wallet. */
+  eligibilityCacheSeconds: number;
+  /** Max fresh eligibility evaluations per wallet per 10 minutes (each costs RPC calls). */
+  eligibilityChecksPerWallet: number;
+  providerTimeoutMs: number;
 };
 
 export type EnvReader = (name: string) => string | undefined;
@@ -54,6 +66,9 @@ export function loadConfig(env: EnvReader): AppConfig {
     if (Number.parseInt(id, 10) > 0 && url) rpcUrls[Number.parseInt(id, 10)] = url;
   }
 
+  const feed = (env("CHAINLINK_ETH_USD_FEED") ?? CHAINLINK_ETH_USD_MAINNET) as `0x${string}`;
+  if (!/^0x[0-9a-fA-F]{40}$/.test(feed)) throw new Error("CHAINLINK_ETH_USD_FEED must be an address");
+
   return {
     campaignId: env("CAMPAIGN_ID") ?? "fwg-genesis",
     allowedOrigins,
@@ -64,5 +79,11 @@ export function loadConfig(env: EnvReader): AppConfig {
     nonceTtlSeconds: int(env("NONCE_TTL_SECONDS"), 600),
     sessionTtlSeconds: int(env("SESSION_TTL_SECONDS"), 7200),
     adminSessionTtlSeconds: int(env("ADMIN_SESSION_TTL_SECONDS"), 3600),
+    eligibilityRpcUrls: { ...DEFAULT_ELIGIBILITY_RPC_URLS, ...rpcUrls },
+    chainlinkEthUsdFeed: feed,
+    priceMaxAgeSeconds: int(env("PRICE_MAX_AGE_SECONDS"), 4500),
+    eligibilityCacheSeconds: int(env("ELIGIBILITY_CACHE_SECONDS"), 300),
+    eligibilityChecksPerWallet: int(env("ELIGIBILITY_CHECKS_PER_WALLET"), 10),
+    providerTimeoutMs: int(env("PROVIDER_TIMEOUT_MS"), 8000),
   };
 }

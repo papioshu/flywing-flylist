@@ -10,8 +10,8 @@ export type Purpose = "register" | "admin";
 
 export const SIWE_STATEMENTS: Record<Purpose, string> = {
   register:
-    "Join the FLY WING GENESIS allowlist. This signature only proves you own this wallet. It is free, sends no transaction, and grants no token approvals.",
-  admin: "Sign in to the FLY WING GENESIS allowlist admin dashboard. This signature is free and sends no transaction.",
+    "Apply for the FLY WING GENESIS FLYLIST. This signature only proves you own this wallet. It is free, sends no transaction, and grants no token approvals.",
+  admin: "Sign in to the FLY WING GENESIS FLYLIST admin dashboard. This signature is free and sends no transaction.",
 };
 
 /** Allowed clock skew between the signer's clock and the server, in ms. */

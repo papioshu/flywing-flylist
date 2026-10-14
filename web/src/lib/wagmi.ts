@@ -21,7 +21,7 @@ export const wagmiConfig = createConfig({
             showQrModal: true,
             metadata: {
               name: "FLY WING GENESIS",
-              description: "FLY WING GENESIS allowlist",
+              description: "FLY WING GENESIS FLYLIST",
               url: window.location.origin,
               icons: [`${window.location.origin}/favicon.png`],
             },

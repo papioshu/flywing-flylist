@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import { createApp } from "../supabase/functions/_shared/app.ts";
 import { loadConfig } from "../supabase/functions/_shared/config.ts";
 import { createSignatureVerifier } from "../supabase/functions/_shared/siwe.ts";
+import { createFakeNet } from "../tests/fakeNet.ts";
 import { openPglite } from "./pglite.ts";
 
 const PORT = Number(process.env.API_PORT ?? 8787);
@@ -17,7 +18,28 @@ const env: Record<string, string | undefined> = {
 
 const config = loadConfig((name) => env[name]);
 const db = await openPglite(process.env.PGLITE_DIR ?? ".data/pglite");
-const handle = createApp({ db, config, verifySignature: createSignatureVerifier(config.rpcUrls) });
+// DEV_FAKE_CHAIN=1 (local UI tests only): balances and prices come from an in-memory fake
+// network instead of live RPCs, controlled via http://localhost:FAKE_CHAIN_PORT. Every wallet
+// holds 1 ETH on Ethereum unless set otherwise. The Edge Function never loads this.
+const fake = process.env.DEV_FAKE_CHAIN === "1" ? createFakeNet(config.eligibilityRpcUrls, () => Date.now()) : null;
+const handle = createApp({ db, config, verifySignature: createSignatureVerifier(config.rpcUrls), fetch: fake?.fetch });
+
+if (fake) {
+  const FAKE_PORT = Number(process.env.FAKE_CHAIN_PORT ?? 8788);
+  createServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const c of req) chunks.push(c as Buffer);
+    try {
+      const body = JSON.parse(Buffer.concat(chunks).toString() || "{}");
+      if (req.url === "/balance") fake.setBalance(body.wallet, Number(body.chainId), BigInt(body.wei));
+      else if (req.url === "/state") Object.assign(fake.state, body);
+      else throw new Error("unknown");
+      res.writeHead(200).end("ok");
+    } catch (e) {
+      res.writeHead(400).end(String(e));
+    }
+  }).listen(FAKE_PORT, "127.0.0.1", () => console.log(`  FAKE CHAIN control on http://127.0.0.1:${FAKE_PORT}`));
+}
 
 createServer(async (req, res) => {
   const chunks: Buffer[] = [];

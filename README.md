@@ -1,13 +1,20 @@
-# FLY WING GENESIS — Mint Site (Allowlist Registration MVP)
+# FLY WING GENESIS — Mint Site (FLYLIST registration)
 
-Landing page + self-service allowlist registration for FLY WING GENESIS.
+Landing page + self-service **FLYLIST** (allowlist) registration for FLY WING GENESIS.
 
-Visitor flow: **Connect Wallet → enter X username → Join Allowlist → sign a free SIWE message → saved**. Returning
-wallets see their existing status. Admins get `/admin/allowlist` with search, filters, sorting, pagination, status/notes
-editing with an audit trail, and a full-dataset **CSV export**.
+Nothing happens on page load or when a wallet connects. The only entry point is **APPLY 4 FLYLIST**:
+connect (if needed) → sign a free SIWE message → server verifies → registration lookup (already registered? show a
+compact status) → server-side eligibility check (**≥ $55 of native ETH on Ethereum OR Robinhood Chain**, each chain on
+its own) → modal with the read-only verified **wallet address** and an **X username** field → **SUBMIT TO FLYLIST**.
 
-No gas, no transactions, no token approvals. This is independent of the mint contracts
-(`C:\Projectwork\FlyWingGenesis`). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it will feed them later.
+Admins get `/admin/allowlist`: search, filters, sorting, pagination, status/notes editing with an audit trail, the
+eligibility snapshot per registration (wei, ETH/USD price + source, USD value, chain), and server-generated **CSV
+exports** (all / pending verification / eligible + approved / final mint allowlist = approved only).
+
+No gas, no transactions, no token approvals; balances are only read. Free data sources only (public RPCs, Chainlink
+read over RPC, Coinbase public spot as fallback). X follow / NFT holder / invite-code gating are **not** active (see
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) § Access policy). Independent of the mint contracts
+(`C:\Projectwork\FlyWingGenesis`).
 
 | Part | Where | Runs on |
 |---|---|---|
@@ -23,30 +30,43 @@ cp .env.example .env            # set ADMIN_WALLETS to your wallet; VITE_API_URL
 npm run dev                     # API on :8787 (PGlite, persisted in .data/pglite) + site on :5173
 ```
 
-Open http://localhost:5173 and http://localhost:5173/admin/allowlist.
+Open http://localhost:5173 and http://localhost:5173/admin/allowlist. The dev API reads **live** balances and prices.
+To test without real ETH, start the API with `DEV_FAKE_CHAIN=1` (every wallet holds 1 ETH on Ethereum; set balances
+via `POST http://127.0.0.1:8788/balance {wallet, chainId, wei}`). The Edge Function never loads the fake chain.
 
 ## Tests
 
 ```bash
-npm test          # 36 API/unit tests against real Postgres (PGlite) with real wallet signatures
+npm test          # 60 API/unit tests: real Postgres (PGlite), real wallet signatures, fake network at the fetch boundary
 npm run typecheck
 npm run build
+npx tsx scripts/live-eligibility.ts [wallet]   # one live, read-only check against the real free endpoints
 ```
 
-End-to-end against the real Deno function and the production Postgres driver (postgres.js):
+End-to-end against the real Deno function and the production Postgres driver (postgres.js). Deno can be run with
+`npx --yes deno` if it isn't installed:
 
 ```bash
 npm run pg:server -- 55433                                   # Postgres wire protocol (PGlite)
 cd supabase/functions/allowlist && DB_POOL_MAX=1 \
   SUPABASE_DB_URL=postgres://postgres:postgres@127.0.0.1:55433/postgres \
   ALLOWED_ORIGINS=http://localhost:5173 IP_HASH_SALT=local-test-salt-123 ADMIN_WALLETS=<throwaway admin address> \
-  deno run --config deno.json --allow-net --allow-env --allow-read --allow-sys index.ts
-VITE_API_URL=http://127.0.0.1:8000/allowlist npx vite         # site
-ADMIN_PRIVATE_KEY=<throwaway key> API_URL=http://127.0.0.1:8000/allowlist npm run smoke   # 21 HTTP checks
-ADMIN_PRIVATE_KEY=<throwaway key> npm run e2e:ui                                          # 19 browser checks, desktop + iPhone
+  npx --yes deno run --config deno.json --allow-net --allow-env --allow-read --allow-sys index.ts
+# 31 HTTP checks; live eligibility from the Deno runtime. SMOKE_DB_URL (LOCAL ONLY) unlocks the registration part.
+SMOKE_DB_URL=postgres://postgres:postgres@127.0.0.1:55433/postgres ADMIN_PRIVATE_KEY=<throwaway key> \
+  API_URL=http://127.0.0.1:8000/allowlist npm run smoke
 ```
 
-`DB_POOL_MAX=1` is only for the PGlite harness (one backend). Use throwaway keys only.
+Browser e2e (44 checks, desktop + iPhone 13) against the dev API with the fake chain:
+
+```bash
+DEV_FAKE_CHAIN=1 ADMIN_WALLETS=<throwaway admin address> npm run dev:api
+VITE_API_URL=http://localhost:8787/allowlist npx vite
+ADMIN_PRIVATE_KEY=<throwaway key> npm run e2e:ui            # screenshots in .data/ui-e2e/
+```
+
+The dev server sees every request as one IP, so back-to-back e2e runs can hit the per-IP rate limits; wait a minute
+between runs. `DB_POOL_MAX=1` is only for the PGlite harness. Use throwaway keys only.
 
 ## Deploying
 

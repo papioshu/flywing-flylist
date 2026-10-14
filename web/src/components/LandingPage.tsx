@@ -1,6 +1,6 @@
-import { useState } from "react";
-import type { Campaign } from "../lib/api";
-import { BoardingPass } from "./BoardingPass";
+import { useEffect, useState } from "react";
+import { api, type Campaign } from "../lib/api";
+import { FlylistApply } from "./FlylistApply";
 
 const FLOCK = [
   { src: "/art/fwg-9.webp", alt: "FLY WING bird in a ninja headband against flames" },
@@ -13,6 +13,12 @@ const FLOCK = [
 
 export function LandingPage() {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
+  // Public campaign rules only (open/closed). No wallet calls happen until APPLY 4 FLYLIST is clicked.
+  useEffect(() => {
+    api<{ campaign: Campaign }>("/campaign")
+      .then((r) => setCampaign(r.campaign))
+      .catch(() => setCampaign(null));
+  }, []);
   const closed = campaign !== null && !campaign.isOpen;
   return (
     <div className="page">
@@ -20,7 +26,7 @@ export function LandingPage() {
         <a className="wordmark" href="/">
           FLY WING <span>GENESIS</span>
         </a>
-        <span className={`pill ${closed ? "pill--dark" : ""}`}>Allowlist{campaign ? (closed ? " · Gate closed" : " · Gate open") : ""}</span>
+        <span className={`pill ${closed ? "pill--dark" : ""}`}>FLYLIST{campaign ? (closed ? " · Gate closed" : " · Gate open") : ""}</span>
       </header>
 
       <main>
@@ -33,8 +39,8 @@ export function LandingPage() {
               {closed ? "is closed." : "is open."}
             </h1>
             <p className="hero__lede">
-              Put your wallet on the FLY WING GENESIS allowlist. Connect, drop your X handle, sign one free message. That's
-              the whole flight check.
+              Apply for the FLY WING GENESIS FLYLIST. Connect, sign one free message, drop your X handle. That's the whole
+              flight check.
             </p>
             <ul className="checks">
               <li>Free. No gas.</li>
@@ -50,7 +56,7 @@ export function LandingPage() {
           </div>
         </section>
 
-        <BoardingPass onCampaign={setCampaign} />
+        <FlylistApply campaign={campaign} />
 
         <section className="flock" aria-label="Some of the flock">
           {FLOCK.map((b) => (
@@ -62,8 +68,9 @@ export function LandingPage() {
           <div>
             <h3>What joining means</h3>
             <p>
-              Joining puts your wallet on the registration list. It does <strong>not</strong> guarantee an allowlist spot or
-              an NFT. The team reviews registrations, and approvals and mint details will be announced on FLY WING's
+              Applying puts your wallet on the FLYLIST registration list. It does <strong>not</strong> guarantee a mint spot
+              or an NFT. To apply, a wallet must hold at least $55 worth of ETH on Ethereum or Robinhood Chain; we read the
+              balance once and never move, charge or lock it. The team reviews registrations, and approvals and mint details will be announced on FLY WING's
               official channels. Nobody from FLY WING will ever DM you a mint link or ask for your recovery phrase.
             </p>
           </div>
@@ -71,7 +78,7 @@ export function LandingPage() {
             <h3>Privacy</h3>
             <p>
               <strong>What we collect:</strong> your public wallet address, the X username you type in, the network you
-              signed on, and when you registered. <strong>Why:</strong> to run the FLY WING GENESIS allowlist, review
+              signed on, when you registered, and the ETH balance and ETH/USD price we read when you applied. <strong>Why:</strong> to run the FLY WING GENESIS FLYLIST, review
               registrations, and later build the mint list. <strong>How it's used:</strong> your wallet and X username are
               linked together and visible only to the FLY WING team. We don't publish the list, sell it, or share it. Your
               signature is checked once and not stored. To be removed, contact FLY WING on X.

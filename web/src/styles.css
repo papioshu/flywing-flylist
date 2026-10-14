@@ -622,6 +622,166 @@ a {
   }
 }
 
+
+/* ---------- FLYLIST gate (the only public entry point) ---------- */
+
+.gate {
+  display: grid;
+  grid-template-columns: 1fr 130px;
+  max-width: 860px;
+  margin: 0 auto;
+  color: var(--ink);
+  filter: drop-shadow(8px 8px 0 var(--ink));
+}
+
+.gate__main {
+  background: var(--paper);
+  border: var(--line);
+  border-right: none;
+  border-radius: var(--radius) 0 0 var(--radius);
+  padding: 22px 28px 20px;
+}
+
+.gate__stub {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--paper-2);
+  border: var(--line);
+  border-left: 3px dashed var(--ink);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 22px 16px;
+}
+
+.gate__title {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 34px;
+  line-height: 1.05;
+  margin: 10px 0 8px;
+  color: var(--indigo);
+}
+
+.gate__lede {
+  margin: 0 0 16px;
+  font-size: 17px;
+}
+
+.btn--apply {
+  font-size: 24px;
+  min-height: 60px;
+  letter-spacing: 0.06em;
+}
+
+/* ---------- FLYLIST modal ---------- */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  overflow-y: auto;
+  background: rgb(15 15 61 / 0.72);
+}
+
+.pass--modal {
+  width: 100%;
+  max-width: 820px;
+  margin: auto;
+}
+
+.pass--modal:focus {
+  outline: none;
+}
+
+.pass--modal .pass__title {
+  margin: 14px 0 12px;
+  padding-right: 150px; /* room for the stamp */
+}
+
+.modal__close {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.flyfields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 16px;
+}
+
+/* Read-only wallet: greyed, not focusable, never editable. */
+.input--locked {
+  background: #e4dccb;
+  border-color: #8a8270;
+  color: var(--muted);
+}
+
+.input--locked input {
+  padding-left: 14px;
+  color: #4b4558;
+  cursor: not-allowed;
+}
+
+.input--locked:focus-within {
+  outline: none;
+}
+
+.copy {
+  appearance: none;
+  align-self: stretch;
+  border: none;
+  border-left: 2px solid #8a8270;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 0 14px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.copy:focus-visible {
+  outline: 3px solid var(--flame);
+  outline-offset: -3px;
+}
+
+.eligible-note {
+  margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.balances {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 4px 0 6px;
+  font-size: 15px;
+}
+
+.balances th {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  text-align: left;
+  font-weight: 500;
+}
+
+.balances th,
+.balances td {
+  padding: 6px 8px 6px 0;
+  border-bottom: 2px solid var(--ink);
+}
+
+.done .pass__fields {
+  margin-top: 0;
+}
+
 /* ---------- flock + fine print ---------- */
 
 .flock {
@@ -738,6 +898,25 @@ a {
 
 .panel .admin__title {
   color: var(--indigo);
+}
+
+.exports {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  align-items: center;
+  margin: -6px 0 18px;
+  font-size: 14px;
+  color: var(--paper);
+}
+
+.exports .muted {
+  color: #c9c3e8;
+}
+
+.exports .link {
+  color: var(--paper);
+  font-weight: 700;
 }
 
 .btn--export {
@@ -898,7 +1077,9 @@ a {
 .tag--removed {
   background: #ffb4a8;
 }
-.tag--waitlisted {
+.tag--waitlisted,
+.tag--pending_verification,
+.tag--pending {
   background: #ffe08a;
 }
 .tag--warn {
@@ -1093,6 +1274,53 @@ a {
   .picker__list {
     grid-template-columns: 1fr;
   }
+  .gate {
+    grid-template-columns: 1fr;
+  }
+  .gate__main {
+    border-right: var(--line);
+    border-bottom: none;
+    border-radius: var(--radius) var(--radius) 0 0;
+    padding: 18px 18px 16px;
+  }
+  .gate__stub {
+    border-left: var(--line);
+    border-top: 3px dashed var(--ink);
+    border-radius: 0 0 var(--radius) var(--radius);
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 18px;
+  }
+  .gate__title {
+    font-size: 28px;
+  }
+  .flyfields {
+    grid-template-columns: 1fr;
+  }
+  .modal {
+    padding: 12px 10px;
+    place-items: start center;
+  }
+  .pass--modal .pass__stub {
+    display: none;
+  }
+  .pass--modal .pass__main {
+    border-right: var(--line);
+    border-bottom: var(--line);
+    border-radius: var(--radius);
+  }
+  .pass--modal .pass__head {
+    flex-direction: row;
+    justify-content: space-between;
+  }
+  .pass--modal .pass__title {
+    padding-right: 0;
+  }
+  .pass--modal .stamp {
+    top: 54px;
+  }
+
   .fine {
     grid-template-columns: 1fr;
   }

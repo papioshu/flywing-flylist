@@ -23,7 +23,8 @@ describe("wallet verification (SIWE)", () => {
       walletAddress: w.address,
       twitterUsername: "FlyWingFan",
       twitterVerified: false,
-      registrationStatus: "registered",
+      registrationStatus: "eligible",
+      eligibilityStatus: "eligible",
     });
     expect(reg.json.registration.adminNotes).toBeUndefined();
 
@@ -33,7 +34,10 @@ describe("wallet verification (SIWE)", () => {
     expect(row.twitter_username_normalized).toBe("flywingfan");
     expect(row.verification_method).toBe("siwe_eip4361");
     expect(row.verification_chain_id).toBe(8453);
-    expect(row.eligibility_status).toBe("not_checked");
+    expect(row.eligibility_status).toBe("eligible");
+    expect(row.eth_balance_wei).toBe("1000000000000000000");
+    expect(row.eth_usd_price_source).toBe("chainlink");
+    expect(row.eligibility_chain_id).toBe(1);
     expect(JSON.stringify(row)).not.toMatch(/0x[0-9a-f]{130}/i); // no signature persisted
     const [sess] = await t.db.query<any>(`select * from allowlist.sessions`);
     expect(sess.token_hash).not.toBe(token); // only the hash is stored
@@ -254,7 +258,7 @@ describe("registration rules", () => {
     await t.call("POST", "/me/registration", { token: await t.signIn(w), body: { twitterUsername: "returning" } });
     const later = await t.signIn(w);
     const r = await t.call("GET", "/me/registration", { token: later });
-    expect(r.json.registration).toMatchObject({ twitterUsername: "returning", registrationStatus: "registered" });
+    expect(r.json.registration).toMatchObject({ twitterUsername: "returning", registrationStatus: "eligible" });
   });
 
   it("refuses new registrations when the campaign is closed", async () => {
@@ -390,10 +394,10 @@ describe("admin", () => {
     const [{ id }] = await t.db.query<any>(`select id from allowlist.registrations`);
     const r = await t.call("PATCH", `/admin/registrations/${id}`, {
       token,
-      body: { registrationStatus: "approved", eligibilityStatus: "eligible", adminNotes: "Holder of 2 BOMBSQUAD" },
+      body: { registrationStatus: "approved", eligibilityStatus: "ineligible", adminNotes: "Holder of 2 BOMBSQUAD" },
     });
     expect(r.status).toBe(200);
-    expect(r.json.registration).toMatchObject({ registrationStatus: "approved", eligibilityStatus: "eligible", adminNotes: "Holder of 2 BOMBSQUAD" });
+    expect(r.json.registration).toMatchObject({ registrationStatus: "approved", eligibilityStatus: "ineligible", adminNotes: "Holder of 2 BOMBSQUAD" });
     expect(r.json.registration.eligibilityCheckedAt).toBe("2026-10-12T12:00:00.000Z");
 
     await t.call("PATCH", `/admin/registrations/${id}`, { token, body: { adminNotes: null } });
@@ -404,7 +408,7 @@ describe("admin", () => {
       actorRole: "admin",
       changes: {
         registration_status: { from: "registered", to: "approved" },
-        eligibility_status: { from: "not_checked", to: "eligible" },
+        eligibility_status: { from: "not_checked", to: "ineligible" },
         admin_notes: { from: null, to: "Holder of 2 BOMBSQUAD" },
       },
     });
@@ -424,7 +428,7 @@ describe("admin", () => {
     await t.call("PATCH", `/admin/registrations/${id}`, { token: adminToken, body: { adminNotes: "SECRET-NOTE" } });
     const mine = await t.call("GET", "/me/registration", { token: userToken });
     expect(mine.text).not.toContain("SECRET-NOTE");
-    expect(mine.text).not.toContain("eligib");
+    expect(mine.text).not.toMatch(/adminNotes|eligibility_check|ethBalanceWei/);
   });
 
   it("exports the full dataset across pagination, oldest first, with safe escaping", async () => {
@@ -437,7 +441,7 @@ describe("admin", () => {
     const r = await t.call("GET", "/admin/export.csv", { token });
     expect(r.status).toBe(200);
     expect(r.headers.get("content-type")).toBe("text/csv; charset=utf-8");
-    expect(r.headers.get("content-disposition")).toBe('attachment; filename="flywing-allowlist-2026-10-12.csv"');
+    expect(r.headers.get("content-disposition")).toBe('attachment; filename="flylist-all-2026-10-12.csv"');
     expect([...r.bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]); // UTF-8 BOM for Excel
 
     const rows = parseCsv(r.text.slice(1));
@@ -445,13 +449,14 @@ describe("admin", () => {
     expect(rows).toHaveLength(2106);
     expect(rows[1][3]).toBe("user1");
     expect(rows[2105][3]).toBe("user2105");
-    const at = rows.slice(1).map((row) => row[8]);
+    const col = (name: string) => CSV_COLUMNS.indexOf(name);
+    const at = rows.slice(1).map((row) => row[col("registered_at_utc")]);
     expect([...at].sort()).toEqual(at); // oldest first
     expect(at[0]).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
-    expect(rows[1][4]).toBe("https://x.com/user1");
-    expect(rows[1][5]).toBe("false");
-    expect(rows[1][10]).toBe("8453");
-    expect(rows[1][11]).toBe(`'${nasty}`); // neutralized + round-trips intact
+    expect(rows[1][col("twitter_url")]).toBe("https://x.com/user1");
+    expect(rows[1][col("twitter_verification")]).toBe("unverified (self-reported)");
+    expect(rows[1][col("signin_chain_id")]).toBe("8453");
+    expect(rows[1][col("admin_notes")]).toBe(`'${nasty}`); // neutralized + round-trips intact
     expect(new Set(rows.slice(1).map((row) => row[0])).size).toBe(2105); // no duplicates across batches
 
     const filtered = parseCsv((await t.call("GET", "/admin/export.csv?q=user210", { token })).text.slice(1));

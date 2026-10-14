@@ -6,6 +6,7 @@ import { parseSiweMessage } from "viem/siwe";
 import type { AppConfig } from "./config.ts";
 import { toCsv } from "./csv.ts";
 import type { Db } from "./db.ts";
+import { checkEthBalance, COINBASE_SPOT_URL, type EligibilityPolicy, type Fetch } from "./eligibility.ts";
 import { checkSiweMessage, CLOCK_SKEW_MS, type Purpose, SIWE_STATEMENTS, type SignatureVerifier } from "./siwe.ts";
 import { parseTwitterHandle, twitterProfileUrl } from "./twitter.ts";
 
@@ -14,10 +15,15 @@ export type AppDeps = {
   config: AppConfig;
   verifySignature: SignatureVerifier;
   now?: () => Date;
+  /** Network seam for eligibility reads (RPC + price). Defaults to global fetch. */
+  fetch?: Fetch;
 };
 
-export const REGISTRATION_STATUSES = ["registered", "approved", "waitlisted", "rejected", "removed"] as const;
-export const ELIGIBILITY_STATUSES = ["not_checked", "eligible", "ineligible"] as const;
+// Spec §7. `approved` is an admin decision and the only status in the final mint export.
+export const REGISTRATION_STATUSES = ["registered", "pending_verification", "eligible", "ineligible", "approved", "rejected"] as const;
+export const ELIGIBILITY_STATUSES = ["not_checked", "pending", "eligible", "ineligible"] as const;
+
+export const CHAIN_NAMES: Record<number, string> = { 1: "Ethereum", 4663: "Robinhood Chain" };
 
 export const CSV_COLUMNS = [
   "registration_id",
@@ -25,14 +31,31 @@ export const CSV_COLUMNS = [
   "wallet_address",
   "twitter_username",
   "twitter_url",
-  "twitter_verified",
+  "twitter_verification",
   "registration_status",
   "eligibility_status",
+  "access_method",
   "registered_at_utc",
   "updated_at_utc",
-  "verification_chain_id",
+  "eligibility_checked_at_utc",
+  "eligibility_chain_id",
+  "eth_balance_wei",
+  "eth_balance_eth",
+  "eth_usd_price",
+  "eth_usd_price_source",
+  "eth_usd_price_at_utc",
+  "balance_usd_at_registration",
+  "signin_chain_id",
   "admin_notes",
 ];
+
+/** Export presets. `final` is approved-only: pending or merely eligible wallets never reach it. */
+export const EXPORT_PRESETS: Record<string, { label: string; statuses: string[] | null }> = {
+  all: { label: "all", statuses: null },
+  pending_verification: { label: "pending-verification", statuses: ["pending_verification"] },
+  eligible: { label: "eligible-approved", statuses: ["eligible", "approved"] },
+  final: { label: "final-mint-allowlist", statuses: ["approved"] },
+};
 
 // Requests per client IP per minute, by bucket.
 const RATE_LIMITS: Record<string, number> = {
@@ -40,9 +63,28 @@ const RATE_LIMITS: Record<string, number> = {
   nonce: 20,
   verify: 20,
   me: 60,
+  eligibility: 10,
   register: 10,
   admin: 300,
   export: 10,
+};
+
+/** Formats an integer with `decimals` implied decimals as a plain decimal string. */
+export function formatUnits(value: bigint | string | null | undefined, decimals: number, maxFraction = decimals): string | null {
+  if (value === null || value === undefined) return null;
+  const v = BigInt(value);
+  const neg = v < 0n;
+  const abs = neg ? -v : v;
+  const scale = 10n ** BigInt(decimals);
+  const whole = abs / scale;
+  const frac = decimals === 0 ? "" : (abs % scale).toString().padStart(decimals, "0").slice(0, maxFraction).replace(/0+$/, "");
+  return `${neg ? "-" : ""}${whole}${frac ? `.${frac}` : ""}`;
+}
+
+const centsToUsd = (c: bigint | string | null | undefined) => {
+  if (c === null || c === undefined) return null;
+  const v = BigInt(c);
+  return `${v / 100n}.${(v % 100n).toString().padStart(2, "0")}`;
 };
 
 const MAX_BODY_BYTES = 10_000;
@@ -72,8 +114,59 @@ type RegistrationRow = {
   eligibility_status: string;
   eligibility_checked_at: Date | string | null;
   admin_notes: string | null;
+  access_method: string;
+  eligibility_check_id: string | null;
+  eth_balance_wei: string | null;
+  eth_usd_price: string | null;
+  eth_usd_price_decimals: number | null;
+  eth_usd_price_source: string | null;
+  eth_usd_price_at: Date | string | null;
+  eth_balance_usd_cents: string | null;
+  eligibility_chain_id: number | null;
   handle_shared_count?: number | string;
 };
+
+type CheckRow = {
+  id: string;
+  wallet_address_normalized: string;
+  checked_at: Date | string;
+  expires_at: Date | string;
+  result: "eligible" | "ineligible" | "unavailable";
+  policy: unknown;
+  eth_usd_price: string | null;
+  eth_usd_price_decimals: number | null;
+  eth_usd_price_source: string | null;
+  eth_usd_price_at: Date | string | null;
+  best_chain_id: number | null;
+  best_balance_wei: string | null;
+  best_balance_usd_cents: string | null;
+  chains: unknown;
+  error: string | null;
+};
+
+const asJson = (v: unknown) => (typeof v === "string" ? JSON.parse(v) : v);
+
+/** What a registrant may see about their own eligibility check. Their own wallet's data only. */
+function publicEligibility(c: CheckRow, minUsdCents: number, cached: boolean) {
+  const chains = (asJson(c.chains) as { chainId: number; status: string; balanceWei?: string; usdCents?: string; passed?: boolean }[]).map((x) => ({
+    chainId: x.chainId,
+    chainName: CHAIN_NAMES[x.chainId] ?? `Chain ${x.chainId}`,
+    status: x.status,
+    balanceEth: x.balanceWei ? formatUnits(x.balanceWei, 18, 6) : null,
+    balanceUsd: x.usdCents ? centsToUsd(x.usdCents) : null,
+    passed: x.passed ?? null,
+  }));
+  return {
+    result: c.result,
+    minBalanceUsd: centsToUsd(BigInt(minUsdCents)),
+    ethUsdPrice: c.eth_usd_price ? formatUnits(c.eth_usd_price, c.eth_usd_price_decimals ?? 8, 2) : null,
+    priceSource: c.eth_usd_price_source,
+    priceAt: iso(c.eth_usd_price_at),
+    checkedAt: iso(c.checked_at),
+    chains,
+    cached,
+  };
+}
 
 class HttpError extends Error {
   constructor(public status: number, public code: string, message: string, public extra?: Record<string, unknown>) {
@@ -93,6 +186,7 @@ function publicRegistration(r: RegistrationRow) {
     twitterUsername: r.twitter_username,
     twitterVerified: r.twitter_verified,
     registrationStatus: r.registration_status,
+    eligibilityStatus: r.eligibility_status,
     registeredAt: iso(r.registered_at),
     updatedAt: iso(r.updated_at),
   };
@@ -116,6 +210,14 @@ function adminRegistration(r: RegistrationRow) {
     verificationMethod: r.verification_method,
     verificationTimestamp: iso(r.verification_timestamp),
     adminNotes: r.admin_notes,
+    accessMethod: r.access_method,
+    eligibilityChainId: r.eligibility_chain_id,
+    ethBalanceWei: r.eth_balance_wei === null ? null : String(r.eth_balance_wei),
+    ethBalanceEth: formatUnits(r.eth_balance_wei, 18),
+    ethUsdPrice: r.eth_usd_price === null ? null : formatUnits(r.eth_usd_price, r.eth_usd_price_decimals ?? 8),
+    ethUsdPriceSource: r.eth_usd_price_source,
+    ethUsdPriceAt: iso(r.eth_usd_price_at),
+    balanceUsd: centsToUsd(r.eth_balance_usd_cents),
     handleSharedCount: r.handle_shared_count === undefined ? undefined : Number(r.handle_shared_count),
   };
 }
@@ -170,6 +272,7 @@ function utcDate(value: string | null, label: string): Date | null {
 export function createApp(deps: AppDeps) {
   const { db, config, verifySignature } = deps;
   const now = deps.now ?? (() => new Date());
+  const fetchFn: Fetch = deps.fetch ?? ((...args) => fetch(...args));
 
   // ---------- plumbing ----------
 
@@ -276,15 +379,26 @@ export function createApp(deps: AppDeps) {
     return session;
   }
 
-  async function loadCampaign() {
+  async function loadCampaignWithPolicy() {
     const rows = await db.query<{
       id: string;
       name: string;
       status: string;
       opens_at: Date | string | null;
       closes_at: Date | string | null;
-    }>(`select id, name, status, opens_at, closes_at from allowlist.campaigns where id = $1`, [config.campaignId]);
-    if (rows.length === 0) throw new HttpError(500, "CAMPAIGN_MISSING", "Allowlist campaign is not configured.");
+      access_mode: EligibilityPolicy["accessMode"];
+      eth_balance_check_enabled: boolean;
+      min_eth_balance_usd_cents: number;
+      eth_balance_chain_ids: number[] | string;
+      x_follow_required: boolean;
+      allow_provisional_registration: boolean;
+    }>(
+      `select id, name, status, opens_at, closes_at, access_mode, eth_balance_check_enabled, min_eth_balance_usd_cents,
+              eth_balance_chain_ids, x_follow_required, allow_provisional_registration
+       from allowlist.campaigns where id = $1`,
+      [config.campaignId],
+    );
+    if (rows.length === 0) throw new HttpError(500, "CAMPAIGN_MISSING", "FLYLIST campaign is not configured.");
     const c = rows[0];
     const t = now().getTime();
     const opensAt = iso(c.opens_at);
@@ -293,12 +407,159 @@ export function createApp(deps: AppDeps) {
       c.status === "open" &&
       (!opensAt || new Date(opensAt).getTime() <= t) &&
       (!closesAt || new Date(closesAt).getTime() > t);
-    return { id: c.id, name: c.name, status: c.status, opensAt, closesAt, isOpen };
+    const chainIds = Array.isArray(c.eth_balance_chain_ids)
+      ? c.eth_balance_chain_ids.map(Number)
+      : String(c.eth_balance_chain_ids).replace(/[{}]/g, "").split(",").filter(Boolean).map(Number);
+    const policy: EligibilityPolicy = {
+      accessMode: c.access_mode,
+      ethBalanceCheckEnabled: c.eth_balance_check_enabled,
+      minEthBalanceUsdCents: Number(c.min_eth_balance_usd_cents),
+      ethBalanceChainIds: chainIds,
+      xFollowRequired: c.x_follow_required,
+      allowProvisionalRegistration: c.allow_provisional_registration,
+    };
+    return { campaign: { id: c.id, name: c.name, status: c.status, opensAt, closesAt, isOpen }, policy };
+  }
+
+  /** Public campaign info, including the rules an applicant must meet (rules, not data). */
+  async function loadCampaign() {
+    const { campaign, policy } = await loadCampaignWithPolicy();
+    return {
+      ...campaign,
+      requirements: {
+        accessMode: policy.accessMode,
+        ethBalance: policy.ethBalanceCheckEnabled
+          ? {
+              minUsd: centsToUsd(BigInt(policy.minEthBalanceUsdCents)),
+              chains: policy.ethBalanceChainIds.map((id) => ({ chainId: id, chainName: CHAIN_NAMES[id] ?? `Chain ${id}` })),
+              rule: "any_one_chain",
+            }
+          : null,
+        xFollowRequired: policy.xFollowRequired,
+      },
+    };
+  }
+
+  // ---------- eligibility ----------
+
+  const providerConfig = {
+    rpcUrls: config.eligibilityRpcUrls,
+    priceChainId: 1,
+    chainlinkFeed: config.chainlinkEthUsdFeed,
+    priceMaxAgeSeconds: config.priceMaxAgeSeconds,
+    coinbaseUrl: COINBASE_SPOT_URL,
+    timeoutMs: config.providerTimeoutMs,
+  };
+
+  async function cachedCheck(wallet: string): Promise<CheckRow | null> {
+    const rows = await db.query<CheckRow>(
+      `select * from allowlist.eligibility_checks
+       where campaign_id = $1 and wallet_address_normalized = $2 and expires_at > $3::timestamptz
+         and result in ('eligible', 'ineligible')
+       order by checked_at desc limit 1`,
+      [config.campaignId, wallet, now().toISOString()],
+    );
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Returns this wallet's eligibility under the campaign's current policy: a recent
+   * server-computed result if one exists, otherwise a fresh evaluation (stored).
+   */
+  async function evaluateEligibility(wallet: string, policy: EligibilityPolicy): Promise<{ check: CheckRow; cached: boolean }> {
+    const hit = await cachedCheck(wallet);
+    if (hit) return { check: hit, cached: true };
+
+    const recent = await db.query<{ n: string | number }>(
+      `select count(*) as n from allowlist.eligibility_checks
+       where campaign_id = $1 and wallet_address_normalized = $2 and checked_at > $3::timestamptz`,
+      [config.campaignId, wallet, new Date(now().getTime() - 600_000).toISOString()],
+    );
+    if (Number(recent[0].n) >= config.eligibilityChecksPerWallet) {
+      throw new HttpError(429, "RATE_LIMITED", "Too many eligibility checks for this wallet. Please wait a few minutes.");
+    }
+
+    const checkedAt = now();
+    let result: CheckRow["result"];
+    let price = null as Awaited<ReturnType<typeof checkEthBalance>>["price"];
+    let chains: unknown[] = [];
+    let best = null as Awaited<ReturnType<typeof checkEthBalance>>["best"];
+    let error: string | null = null;
+    if (policy.ethBalanceCheckEnabled) {
+      const r = await checkEthBalance(fetchFn, providerConfig, policy, wallet, checkedAt);
+      ({ result, price, chains, best } = r);
+      error = r.error ?? null;
+      if (r.result === "unavailable") console.warn("flylist: eligibility unavailable", r.error, JSON.stringify(r.chains));
+    } else {
+      result = "eligible"; // no balance requirement in this campaign's policy
+    }
+    const expiresAt = new Date(checkedAt.getTime() + (result === "unavailable" ? 0 : config.eligibilityCacheSeconds * 1000));
+    const rows = await db.query<CheckRow>(
+      `insert into allowlist.eligibility_checks (
+         campaign_id, wallet_address_normalized, checked_at, expires_at, result, policy,
+         eth_usd_price, eth_usd_price_decimals, eth_usd_price_source, eth_usd_price_at,
+         best_chain_id, best_balance_wei, best_balance_usd_cents, chains, error
+       ) values ($1, $2, $3::timestamptz, $4::timestamptz, $5, $6::jsonb, $7::numeric, $8, $9, $10::timestamptz,
+                 $11, $12::numeric, $13::numeric, $14::jsonb, $15)
+       returning *`,
+      [
+        config.campaignId,
+        wallet,
+        checkedAt.toISOString(),
+        expiresAt.toISOString(),
+        result,
+        JSON.stringify(policy),
+        price ? price.price.toString() : null,
+        price ? price.decimals : null,
+        price ? price.source : null,
+        price ? price.at.toISOString() : null,
+        best ? best.chainId : null,
+        best ? best.balanceWei.toString() : null,
+        best ? best.usdCents.toString() : null,
+        JSON.stringify(chains),
+        error,
+      ],
+    );
+    return { check: rows[0], cached: false };
+  }
+
+  /**
+   * Maps the eligibility outcome + policy to the status a new registration gets.
+   * X follow verification is not built yet: if a campaign requires it, applicants are
+   * either recorded as pending_verification (when provisional registration is allowed)
+   * or refused. They are never marked as having followed anyone.
+   */
+  function decideStatus(policy: EligibilityPolicy): { registrationStatus: string; eligibilityStatus: string } {
+    if (policy.xFollowRequired) {
+      if (!policy.allowProvisionalRegistration) {
+        throw new HttpError(403, "VERIFICATION_UNAVAILABLE", "X verification is required but not available yet. Please check back soon.");
+      }
+      return { registrationStatus: "pending_verification", eligibilityStatus: "pending" };
+    }
+    return { registrationStatus: "eligible", eligibilityStatus: "eligible" };
+  }
+
+  async function checkEligibility(req: Request): Promise<Response> {
+    await rateLimit(req, "eligibility");
+    const session = await requireSession(req);
+    const { campaign, policy } = await loadCampaignWithPolicy();
+    const existing = await findOwnRegistration(session.wallet);
+    if (existing) {
+      // Already applied: nothing to evaluate, and no RPC calls spent.
+      return json(req, 200, { walletAddress: getAddress(session.wallet), registration: publicRegistration(existing), eligibility: null });
+    }
+    if (!campaign.isOpen) throw new HttpError(403, "REGISTRATION_CLOSED", "FLYLIST registration is closed.", { campaign });
+    const { check, cached } = await evaluateEligibility(session.wallet, policy);
+    return json(req, 200, {
+      walletAddress: getAddress(session.wallet),
+      registration: null,
+      eligibility: publicEligibility(check, policy.minEthBalanceUsdCents, cached),
+    });
   }
 
   async function requireOpenCampaign() {
     const campaign = await loadCampaign();
-    if (!campaign.isOpen) throw new HttpError(403, "REGISTRATION_CLOSED", "Allowlist registration is closed.", { campaign });
+    if (!campaign.isOpen) throw new HttpError(403, "REGISTRATION_CLOSED", "FLYLIST registration is closed.", { campaign });
     return campaign;
   }
 
@@ -480,7 +741,23 @@ export function createApp(deps: AppDeps) {
         registration: publicRegistration(existing),
       });
     }
-    await requireOpenCampaign();
+    const { campaign, policy } = await loadCampaignWithPolicy();
+    if (!campaign.isOpen) throw new HttpError(403, "REGISTRATION_CLOSED", "FLYLIST registration is closed.", { campaign: await loadCampaign() });
+
+    // Eligibility is always the server's own result for this wallet (recent cached
+    // check, or evaluated now). Nothing the browser sends can mark a wallet eligible.
+    const { check, cached } = await evaluateEligibility(session.wallet, policy);
+    if (check.result === "ineligible") {
+      throw new HttpError(403, "INELIGIBLE", "This wallet doesn't meet the FLYLIST requirements.", {
+        eligibility: publicEligibility(check, policy.minEthBalanceUsdCents, cached),
+      });
+    }
+    if (check.result === "unavailable") {
+      throw new HttpError(503, "ELIGIBILITY_UNAVAILABLE", "We couldn't check your balance right now. Please try again in a minute.", {
+        eligibility: publicEligibility(check, policy.minEthBalanceUsdCents, cached),
+      });
+    }
+    const decided = decideStatus(policy);
 
     const ts = now().toISOString();
     // The wallet comes from the verified session, never from the request body,
@@ -491,14 +768,24 @@ export function createApp(deps: AppDeps) {
            campaign_id, wallet_address, wallet_address_normalized,
            twitter_username, twitter_username_normalized,
            registered_at, updated_at,
-           verification_chain_id, verification_method, verification_timestamp
-         ) values ($1, $2, $3, $4, $5, $6::timestamptz, $6::timestamptz, $7, 'siwe_eip4361', $8::timestamptz)
+           verification_chain_id, verification_method, verification_timestamp,
+           registration_status, eligibility_status, eligibility_checked_at, access_method,
+           eligibility_check_id, eth_balance_wei, eth_usd_price, eth_usd_price_decimals,
+           eth_usd_price_source, eth_usd_price_at, eth_balance_usd_cents, eligibility_chain_id
+         )
+         select $1, $2, $3, $4, $5, $6::timestamptz, $6::timestamptz, $7, 'siwe_eip4361', $8::timestamptz,
+                $9, $10, c.checked_at, $11,
+                c.id, c.best_balance_wei, c.eth_usd_price, c.eth_usd_price_decimals,
+                c.eth_usd_price_source, c.eth_usd_price_at, c.best_balance_usd_cents, c.best_chain_id
+         from allowlist.eligibility_checks c
+         where c.id = $12 and c.wallet_address_normalized = $3
          on conflict (campaign_id, wallet_address_normalized) do nothing
          returning *
        ), aud as (
          insert into allowlist.registration_audit (registration_id, actor_wallet, actor_role, action, changes, created_at)
          select id, wallet_address_normalized, 'registrant', 'registered',
-                jsonb_build_object('twitter_username', twitter_username), $6::timestamptz
+                jsonb_build_object('twitter_username', twitter_username, 'registration_status', registration_status,
+                                   'eligibility_check_id', eligibility_check_id), $6::timestamptz
          from ins
        )
        select * from ins`,
@@ -511,6 +798,10 @@ export function createApp(deps: AppDeps) {
         ts,
         session.chainId,
         session.createdAt.toISOString(),
+        decided.registrationStatus,
+        decided.eligibilityStatus,
+        policy.accessMode,
+        check.id,
       ],
     );
     if (rows.length === 0) {
@@ -583,6 +874,12 @@ export function createApp(deps: AppDeps) {
     if (eligibility) {
       if (!(ELIGIBILITY_STATUSES as readonly string[]).includes(eligibility)) throw new HttpError(400, "INVALID_FILTER", "Unknown eligibility status.");
       add((n) => `eligibility_status = $${n}`, eligibility);
+    }
+    const preset = params.get("preset");
+    if (preset) {
+      const p = EXPORT_PRESETS[preset];
+      if (!p) throw new HttpError(400, "INVALID_FILTER", "Unknown export preset.");
+      if (p.statuses) add((n) => `registration_status = any($${n}::text[])`, p.statuses);
     }
     const from = utcDate(params.get("from"), "From date");
     if (from) add((n) => `registered_at >= $${n}::timestamptz`, from.toISOString());
@@ -798,11 +1095,20 @@ export function createApp(deps: AppDeps) {
           r.wallet_address,
           r.twitter_username_normalized,
           twitterProfileUrl(r.twitter_username_normalized),
-          r.twitter_verified ? "true" : "false",
+          r.twitter_verified ? "verified" : "unverified (self-reported)",
           r.registration_status,
           r.eligibility_status,
+          r.access_method,
           iso(r.registered_at),
           iso(r.updated_at),
+          iso(r.eligibility_checked_at),
+          r.eligibility_chain_id ?? "",
+          r.eth_balance_wei ?? "",
+          formatUnits(r.eth_balance_wei, 18) ?? "",
+          r.eth_usd_price === null ? "" : formatUnits(r.eth_usd_price, r.eth_usd_price_decimals ?? 8),
+          r.eth_usd_price_source ?? "",
+          iso(r.eth_usd_price_at) ?? "",
+          centsToUsd(r.eth_balance_usd_cents) ?? "",
           r.verification_chain_id,
           r.admin_notes ?? "",
         ]);
@@ -812,7 +1118,8 @@ export function createApp(deps: AppDeps) {
       cursor = { at: iso(last.registered_at)!, id: last.id };
     }
 
-    const filename = `flywing-allowlist-${now().toISOString().slice(0, 10)}.csv`;
+    const preset = EXPORT_PRESETS[url.searchParams.get("preset") ?? "all"] ?? EXPORT_PRESETS.all;
+    const filename = `flylist-${preset.label}-${now().toISOString().slice(0, 10)}.csv`;
     return new Response(toCsv(CSV_COLUMNS, rows), {
       status: 200,
       headers: {
@@ -845,6 +1152,7 @@ export function createApp(deps: AppDeps) {
     if (method === "POST" && path === "/auth/nonce") return issueNonce(req);
     if (method === "POST" && path === "/auth/verify") return verify(req);
     if (method === "POST" && path === "/auth/logout") return logout(req);
+    if (method === "POST" && path === "/me/eligibility") return checkEligibility(req);
     if (path === "/me/registration") {
       if (method === "GET") return getOwnRegistration(req);
       if (method === "POST") return register(req);
