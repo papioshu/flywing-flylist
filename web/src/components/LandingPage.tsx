@@ -1,16 +1,10 @@
 import { useEffect, useState } from "react";
 import { api, type Campaign } from "../lib/api";
+import { COLLECTION } from "../lib/collection";
 import { FlylistApply } from "./FlylistApply";
 
-const FLOCK = [
-  { src: "/art/fwg-9.webp", alt: "FLY WING bird in a ninja headband against flames" },
-  { src: "/art/fwg-0.webp", alt: "FLY WING bird with headphones holding a fireball" },
-  { src: "/art/fwg-6.webp", alt: "Pink FLY WING bird with a guitar and a UFO" },
-  { src: "/art/fwg-4.webp", alt: "Blue FLY WING bird in a cowboy hat" },
-  { src: "/art/fwg-14.webp", alt: "FLY WING bird with a balloon hat holding a coin" },
-  { src: "/art/fwg-10.webp", alt: "Red FLY WING bird with a cap and bat" },
-];
-
+// The public FLYLIST landing page, art direction from RichFox's FLY WING kit (red / black / white,
+// diagonal manga panels). Copy in the manifesto band is the wireframe's hero copy, verbatim.
 export function LandingPage() {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   // Public campaign rules only (open/closed). No wallet calls happen until APPLY 4 FLYLIST is clicked.
@@ -21,47 +15,99 @@ export function LandingPage() {
   }, []);
   const closed = campaign !== null && !campaign.isOpen;
   return (
-    <div className="page">
-      <header className="topbar">
-        <a className="wordmark" href="/">
-          FLY WING <span>GENESIS</span>
+    <div className="site">
+      <header className="masthead">
+        <a className="masthead__brand" href="/" aria-label="FLY WING home">
+          <img src="/brand/fly-wing-mark.svg" alt="" width={34} height={39} />
+          <img src="/brand/fly-wing-logo-black.svg" alt="" width={170} height={40} />
         </a>
-        <span className={`pill ${closed ? "pill--dark" : ""}`}>FLYLIST{campaign ? (closed ? " · Gate closed" : " · Gate open") : ""}</span>
+        <span className={`gate-status ${closed ? "gate-status--closed" : ""}`}>
+          FLYLIST{campaign ? (closed ? " · Closed" : " · Open") : ""}
+        </span>
       </header>
 
       <main>
-        <section className="hero">
-          <div className="hero__copy">
-            <p className="kicker">5,555 birds · Departure soon</p>
-            <h1 className="hero__title">
-              The gate
-              <br />
-              {closed ? "is closed." : "is open."}
+        <section className="hero" aria-labelledby="hero-title">
+          <picture>
+            <source
+              type="image/avif"
+              srcSet="/art/landing-768.avif 768w, /art/landing-1280.avif 1280w, /art/landing-1920.avif 1920w"
+              sizes="(orientation: portrait) 260vw, 100vw"
+            />
+            <img
+              className="hero__art"
+              src="/art/landing-1920.webp"
+              srcSet="/art/landing-768.webp 768w, /art/landing-1280.webp 1280w, /art/landing-1920.webp 1920w"
+              sizes="(orientation: portrait) 260vw, 100vw"
+              width={1920}
+              height={1080}
+              alt="FLY WING wordmark among red manga clouds"
+              fetchPriority="high"
+            />
+          </picture>
+          <div className="hero__overlay">
+            <h1 id="hero-title" className="hero__genesis">
+              <span className="visually-hidden">FLY WING </span>Genesis
             </h1>
-            <p className="hero__lede">
-              Apply for the FLY WING GENESIS FLYLIST. Connect, sign one free message, drop your X handle. That's the whole
-              flight check.
-            </p>
-            <ul className="checks">
-              <li>Free. No gas.</li>
-              <li>No transaction, no token approvals.</li>
-              <li>We never ask for your seed phrase.</li>
-            </ul>
-          </div>
-
-          <div className="hero__art" aria-hidden>
-            {FLOCK.slice(0, 3).map((b, i) => (
-              <img key={b.src} className={`card card--${i}`} src={b.src} alt="" width={320} height={320} />
-            ))}
+            <p className="hero__credit">by RichFox</p>
+            <div className="hero__cta">
+              <FlylistApply campaign={campaign} />
+            </div>
           </div>
         </section>
 
-        <FlylistApply campaign={campaign} />
+        <section className="manifesto" aria-label="FLY WING GENESIS">
+          <div className="manifesto__inner">
+            <p className="manifesto__copy">
+              Wings are given
+              <br />
+              to those chosen.
+              <br />
+              Head in the clouds.
+              <br />
+              Feet on the ground.
+            </p>
+            <p className="manifesto__tag">Fly sh*t only.</p>
+          </div>
+          <ul className="chips" aria-label="Collection">
+            <li>{COLLECTION.supply.toLocaleString("en-US")} supply</li>
+            <li className="chips__accent">{COLLECTION.feathers} feathers</li>
+            <li>{COLLECTION.launchDate}</li>
+          </ul>
+        </section>
 
-        <section className="flock" aria-label="Some of the flock">
-          {FLOCK.map((b) => (
-            <img key={b.src} src={b.src} alt={b.alt} width={200} height={200} loading="lazy" />
-          ))}
+        <section className="how" aria-labelledby="how-title">
+          <h2 id="how-title" className="how__title">
+            <span className="brush">Flylist</span>
+          </h2>
+          <p className="how__lede">
+            {closed
+              ? "The FLYLIST is closed. Already applied? Use the button above to check your wallet's status."
+              : "Three steps. Free. No gas, no transaction, no token approvals."}
+          </p>
+          <ol className="steps">
+            <li>
+              <span className="steps__n" aria-hidden>
+                01
+              </span>
+              <h3>Hold the fare</h3>
+              <p>At least $55 worth of ETH on Ethereum or Robinhood Chain. We read the balance once. Nothing moves.</p>
+            </li>
+            <li>
+              <span className="steps__n" aria-hidden>
+                02
+              </span>
+              <h3>Sign once</h3>
+              <p>One free message proves you own the wallet. No transaction, no approvals, never your seed phrase.</p>
+            </li>
+            <li>
+              <span className="steps__n" aria-hidden>
+                03
+              </span>
+              <h3>Drop your X</h3>
+              <p>Add your X username. It's saved to your wallet, and you can correct it later.</p>
+            </li>
+          </ol>
         </section>
 
         <section className="fine">
@@ -88,7 +134,8 @@ export function LandingPage() {
       </main>
 
       <footer className="footer">
-        <span>© {new Date().getFullYear()} FLY WING GENESIS</span>
+        <img src="/brand/fly-wing-mark-white.svg" alt="" width={22} height={26} loading="lazy" />
+        <span>© {new Date().getFullYear()} FLY WING GENESIS · Art by RichFox</span>
         <a href="#privacy">Privacy</a>
       </footer>
     </div>

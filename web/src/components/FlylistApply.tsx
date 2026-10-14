@@ -190,29 +190,13 @@ export function FlylistApply({ campaign }: { campaign: Campaign | null }) {
   }, [open, step.k]);
 
   return (
-    <section className="gate" aria-labelledby="gate-title">
-      <div className="gate__main">
-        <p className="pass__brand">FLY WING GENESIS · FLYLIST</p>
-        <h2 id="gate-title" className="gate__title">
-          {closed ? "The FLYLIST is closed." : "Get on the FLYLIST."}
-        </h2>
-        <p className="gate__lede">
-          {closed
-            ? "Already applied? Check your wallet's status."
-            : "Hold at least $55 in ETH on Ethereum or Robinhood Chain, sign one free message, add your X username."}
-        </p>
-        <button type="button" className="btn btn--primary btn--apply" onClick={start}>
-          {closed ? "Check my status" : "APPLY 4 FLYLIST"}
-        </button>
-        <p className="form__fine">Free. No gas, no transaction, no token approvals. Nothing is charged or locked.</p>
-      </div>
-      <aside className="gate__stub" aria-hidden>
-        <span className="stub__label">Gate</span>
-        <span className="stub__value">FL</span>
-        <div className="barcode" />
-      </aside>
+    <div className="gate">
+      <button type="button" className="btn--apply" onClick={start}>
+        {closed ? "Check my status" : "APPLY 4 FLYLIST"}
+      </button>
+      <p className="gate__fine">{closed ? "Registration is closed." : "Free · No gas · No approvals"}</p>
 
-      {/* Portal: the gate card's drop-shadow filter would otherwise trap position:fixed. */}
+      {/* Portal: keeps the modal out of any transformed/filtered ancestor, which would trap position:fixed. */}
       {open &&
         createPortal(
         <div className="modal" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && !busy && close()}>
@@ -249,21 +233,14 @@ export function FlylistApply({ campaign }: { campaign: Campaign | null }) {
               </div>
             </div>
             <aside className="pass__stub" aria-hidden>
-              <div>
-                <span className="stub__label">Gate</span>
-                <span className="stub__value">FL</span>
-              </div>
-              <div>
-                <span className="stub__label">Flock</span>
-                <span className="stub__value">5,555</span>
-              </div>
-              <div className="barcode" />
+              <img src="/brand/fly-wing-mark-white.svg" alt="" width={44} height={51} />
+              <span className="stub__word">Flylist</span>
             </aside>
           </div>
         </div>,
           document.body,
         )}
-    </section>
+    </div>
   );
 }
 

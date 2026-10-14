@@ -18,6 +18,27 @@ Browser (HostGator static site)                Supabase
 - The `allowlist` schema is not in Supabase's exposed schemas, RLS is on with no policies, and `anon`/`authenticated` are revoked. The function connects with `SUPABASE_DB_URL` (owner role).
 - `_shared/app.ts` is a runtime-agnostic `(Request) => Response` handler, the same code in Deno (production), the Node dev server, and the tests. Network reads go through an injectable `fetch` (`AppDeps.fetch`), which tests replace with a fake network at that boundary.
 
+## Landing page (`web/src/components/LandingPage.tsx`)
+
+One focused page, top to bottom. Art direction from RichFox's FLY WING kit; asset sources in [ASSETS.md](ASSETS.md).
+
+1. **Masthead:** bird mark + FLY WING logo (RichFox SVGs) and a FLYLIST open/closed tag from `GET /campaign`.
+2. **Hero:** RichFox's cloud landing graphic (FLY WING wordmark baked in), full-bleed with `object-fit: cover`, eager
+   and preloaded (AVIF/WebP srcset). Overlaid under the wordmark: GENESIS, "by RichFox", and the **APPLY 4 FLYLIST**
+   button (`FlylistApply`). Overlay positions are in source-art pixels via container-query units
+   (`--px = max(100cqw/1920, 100cqh/1080)`), so they stay locked to the baked wordmark at every crop.
+3. **Manifesto band:** the wireframe's hero copy, verbatim ("Wings are given to those chosen. Head in the clouds. Feet
+   on the ground. Fly sh*t only."), on a diagonal red panel, plus chips 5,555 supply / 25 feathers / 11.4.26 from
+   `web/src/lib/collection.ts` (single definition; `tests/collection.test.ts` checks it against the Nimbus project
+   config).
+4. **How it works:** FLYLIST brush heading and three steps ($55 ETH, sign once, X username).
+5. **Fine print:** what joining means, privacy. Then a black footer.
+
+No mint UI, gallery or roadmap here; those belong to the separate website build. Nothing on the page calls the
+wallet until APPLY 4 FLYLIST is clicked. Type: Oswald (condensed caps, self-hosted via @fontsource), ChasingClouds
+for uppercase brush display words only (the font has letters only), Zen Kaku Gothic New for body, DM Mono for
+addresses. The modal and admin share the palette tokens at the top of `web/src/styles.css`.
+
 ## The FLYLIST interaction (`web/src/components/FlylistApply.tsx`)
 
 The page renders the gate card and nothing else wallet-related. **No wallet dialog, signature request or modal is

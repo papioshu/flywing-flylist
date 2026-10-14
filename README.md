@@ -2,6 +2,11 @@
 
 Landing page + self-service **FLYLIST** (allowlist) registration for FLY WING GENESIS.
 
+This repo is **only** the public FLYLIST landing page and its registration backend. The full FLY WING website
+(RichFox's wireframe: story, gallery, Genesis Commitments, SQUAD, Phase 2) is a separate build in its own repo and is
+not front-facing yet. The landing page is skinned with RichFox's art (cloud landing graphic, FLY WING logo + bird mark,
+ChasingClouds brush type, red / black / white): see [docs/ASSETS.md](docs/ASSETS.md).
+
 Nothing happens on page load or when a wallet connects. The only entry point is **APPLY 4 FLYLIST**:
 connect (if needed) → sign a free SIWE message → server verifies → registration lookup (already registered? show a
 compact status) → server-side eligibility check (**≥ $55 of native ETH on Ethereum OR Robinhood Chain**, each chain on
@@ -43,11 +48,12 @@ via `POST http://127.0.0.1:8788/balance {wallet, chainId, wei}`). The Edge Funct
 ## Tests
 
 ```bash
-npm test          # 92 API/unit tests: real Postgres (PGlite), real wallet signatures, fake network at the fetch boundary
+npm test          # 94 API/unit tests (incl. landing supply facts vs the Nimbus config): real Postgres (PGlite), real wallet signatures, fake network at the fetch boundary
 npm run typecheck
 npm run build
 npx tsx scripts/live-eligibility.ts [wallet]   # one live, read-only check against the real free endpoints
 npx tsx scripts/live-nft.ts                    # live, read-only ERC-721 ownership read on mainnet (BAYC, sanity only)
+npx tsx scripts/derive-assets.ts               # regenerate web art/logo/favicon from assets-src/richfox/ originals
 ```
 
 End-to-end against the real Deno function and the production Postgres driver (postgres.js). Deno can be run with
