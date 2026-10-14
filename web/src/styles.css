@@ -215,13 +215,6 @@ a {
   pointer-events: auto;
 }
 
-.landing__wallet {
-  position: absolute;
-  top: max(16px, env(safe-area-inset-top));
-  right: max(16px, env(safe-area-inset-right));
-  z-index: 1;
-}
-
 .landing__credit {
   position: absolute;
   right: max(16px, env(safe-area-inset-right));
@@ -769,66 +762,6 @@ a {
 .picker__hint--quiet {
   color: var(--muted);
   font-size: 13px;
-}
-
-/* Standalone CONNECT WALLET (landing corner) */
-.wconnect {
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 6px 16px;
-  font-family: var(--display);
-  font-weight: 600;
-  font-size: 14px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--red);
-  background: var(--white);
-  border: 0;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.wconnect:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 0 var(--red-deep);
-}
-
-.wconnect:focus-visible {
-  outline: 3px solid var(--white);
-  outline-offset: 3px;
-  box-shadow: none;
-}
-
-.wconnect img {
-  border-radius: 5px;
-}
-
-.wconnect .mono {
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-.wconnected {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 16px;
-  padding-bottom: 14px;
-  border-bottom: 2px solid var(--black);
-}
-
-.wconnected p {
-  margin: 0;
-}
-
-.pass--wallet {
-  max-width: 640px;
 }
 
 .picker__hint {

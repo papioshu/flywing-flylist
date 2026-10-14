@@ -29,8 +29,8 @@ nothing else. Asset sources in [ASSETS.md](ASSETS.md).
 - **FLY LIST pill** (`FlylistApply`): white rounded pill, red condensed slanted lettering, under the wordmark.
   Positions and sizes are in source-art pixels via container-query units (`--px`), so at 1920×1080 the pill is
   437×82 at y 735, measured within 1–2px of the wireframe. Accessible name "Apply 4 FLY LIST".
-- **CONNECT WALLET** (`ConnectWallet`), top right. Not in the wireframe; added for the owner's wallet brief.
-  It only connects or switches a wallet and never starts the FLYLIST flow.
+- No separate CONNECT WALLET: the FLY LIST pill is the only wallet entry point (owner, 2026-10-14). If no wallet is
+  connected, the FLYLIST modal opens on the wallet grid first.
 - "Art by RichFox" credit, bottom right. Registration terms and privacy live in the FLYLIST modal's connect step.
 
 `web/src/lib/collection.ts` (supply numbers) is no longer shown on the landing page but stays checked against Nimbus by
@@ -61,7 +61,7 @@ wallets, a generic "Browser Wallet" only if nothing announces over EIP-6963, Wal
 ## The FLYLIST interaction (`web/src/components/FlylistApply.tsx`)
 
 The page renders the gate card and nothing else wallet-related. **No wallet dialog, signature request or modal is
-triggered by page load, wagmi's silent reconnect, or `accountsChanged`.** Connecting through CONNECT WALLET doesn't either. Only the FLY LIST button (APPLY 4 FLYLIST) starts a flow:
+triggered by page load, wagmi's silent reconnect, or `accountsChanged`.** Only the FLY LIST button (APPLY 4 FLYLIST) starts a flow:
 
 1. No wallet connected → modal shows "Wallet connection requested" with the wallet picker.
 2. Connected → **Signature requested**: nonce-bound SIWE (below). A still-valid session token for this wallet in this

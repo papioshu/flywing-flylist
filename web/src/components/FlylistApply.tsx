@@ -269,7 +269,7 @@ function StepBody({
       return (
         <>
           <p className="muted">Wallet connection requested. Pick the wallet you want on the FLYLIST.</p>
-          <WalletPicker onError={setError} label="Connect wallet" />
+          <WalletPicker onError={setError} label="Choose your wallet" />
           {error && (
             <p className="alert" role="alert">
               {error}

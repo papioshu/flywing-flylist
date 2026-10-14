@@ -1,4 +1,4 @@
-// Browser test of the icon-first wallet picker and its separation from the FLYLIST flow.
+// Browser test of the icon-first wallet picker inside the FLYLIST flow (FLY LIST is the only entry point).
 // Several test wallets announce themselves over EIP-6963 (MetaMask, Rabby, Phantom rdns) and sign
 // with throwaway viem keys. Test-only icons are plain coloured squares: they stand in for the icon
 // each real wallet announces about itself and are never shipped.
@@ -98,8 +98,6 @@ async function open(browser: Browser, keys: `0x${string}`[], wallets: MockWallet
 
 const calls = (p: Page) => p.evaluate(() => (window as any).__walletCalls as string[]);
 const tileNames = (p: Page) => p.locator(".wtile").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? ""));
-const flylistOpen = async (p: Page) => (await p.locator("#flylist-title").count()) > 0;
-const connectBtn = (p: Page) => p.locator(".wconnect");
 const flylist = (p: Page) => p.getByRole("button", { name: /apply 4 fly list/i });
 
 const browser = await chromium.launch();
@@ -114,7 +112,7 @@ try {
   await d.page.waitForTimeout(800);
   check("load: no wallet requests", !(await calls(d.page)).some((c) => c.endsWith("eth_requestAccounts")));
 
-  await connectBtn(d.page).click();
+  await flylist(d.page).click();
   await d.page.locator(".wgrid").waitFor();
   const names = await tileNames(d.page);
   console.log("      tiles:", names.join(" | "));
@@ -128,7 +126,7 @@ try {
   const loaded = await d.page.locator(".wgrid img").evaluateAll((imgs) => imgs.every((i) => (i as HTMLImageElement).complete && (i as HTMLImageElement).naturalWidth > 0));
   check("grid: every logo loaded", loaded);
   check("grid: Coinbase Wallet uses Coinbase SDK logo", (await d.page.getByRole("button", { name: "Coinbase Wallet" }).locator("img").getAttribute("src"))!.includes("0052FF"));
-  await d.page.locator(".pass--wallet").screenshot({ path: `${OUT}/01-desktop-grid.png` });
+  await d.page.locator(".pass--modal").screenshot({ path: `${OUT}/01-desktop-grid.png` });
 
   // tooltip on hover
   await d.page.getByRole("button", { name: "Rabby" }).hover();
@@ -138,44 +136,25 @@ try {
     return { text: s.content, opacity: s.opacity };
   });
   check(`tooltip: name on hover (${tip.text}, opacity ${tip.opacity})`, tip.text.includes("Rabby") && tip.opacity === "1");
-  await d.page.locator(".pass--wallet").screenshot({ path: `${OUT}/02-desktop-tooltip.png` });
+  await d.page.locator(".pass--modal").screenshot({ path: `${OUT}/02-desktop-tooltip.png` });
 
-  // keyboard: Tab to MetaMask, Enter connects
+  // keyboard: focus MetaMask, Enter connects and the FLYLIST flow continues (signature → eligibility → form)
   await d.page.getByRole("button", { name: "MetaMask" }).focus();
   await d.page.keyboard.press("Enter");
-  await d.page.locator(".wconnect--on").waitFor({ timeout: 10_000 });
-  await d.page.waitForTimeout(800);
-  check("connect (keyboard): dialog closed, button shows the address", (await connectBtn(d.page).innerText()).includes(d.accounts[0].address.slice(0, 6)));
-  check("connect: FLYLIST flow did NOT open", !(await flylistOpen(d.page)));
-  check("connect: no signature requested", !(await calls(d.page)).some((c) => c.endsWith("personal_sign")));
-  await d.page.screenshot({ path: `${OUT}/03-desktop-connected.png` });
-
-  // switch account inside the wallet: the connect button follows
-  await d.page.evaluate(() => (window as any).__providers["io.metamask"].__switch(1));
-  await d.page.waitForTimeout(500);
-  check("wallet account switch: button shows the new address", (await connectBtn(d.page).innerText()).includes(d.accounts[1].address.slice(0, 6)));
-  await d.page.evaluate(() => (window as any).__providers["io.metamask"].__switch(0));
-  await d.page.waitForTimeout(500);
-
-  // switch wallet provider from the connect dialog
-  await connectBtn(d.page).click();
-  check("dialog when connected: current wallet marked", (await tileNames(d.page)).includes("MetaMask (connected)"));
-  await d.page.getByRole("button", { name: "Rabby" }).click();
-  await d.page.waitForTimeout(1000);
-  check("switch provider: dialog closed after choosing Rabby", (await d.page.locator(".pass--wallet").count()) === 0);
-  check("switch provider: Rabby was asked to connect", (await calls(d.page)).includes("io.rabby:eth_requestAccounts"));
-  check("switch provider: FLYLIST still not open", !(await flylistOpen(d.page)));
-
-  // FLY LIST with a connected wallet goes straight to signature → eligibility → form
-  await flylist(d.page).click();
   await d.page.getByLabel("X / Twitter username").waitFor({ timeout: 20_000 });
   const signs = (await calls(d.page)).filter((c) => c.endsWith("personal_sign"));
-  check("FLY LIST (connected): one signature, from Rabby", signs.length === 1 && signs[0].startsWith("io.rabby"));
+  check("FLY LIST: keyboard-picked MetaMask connected and signed once", signs.length === 1 && signs[0].startsWith("io.metamask"));
+  check("landing: no second connect button", (await d.page.locator(".wconnect").count()) === 0);
   const handle = `w${String(Math.floor(Math.random() * 1e6)).padStart(6, "0")}`;
   await d.page.getByLabel("X / Twitter username").fill(handle);
   await d.page.getByRole("button", { name: "SUBMIT TO FLYLIST" }).click();
   await d.page.getByText("You're on the FLYLIST").waitFor({ timeout: 15_000 });
   check("FLY LIST: registration submitted", true);
+
+  // switch account inside the wallet while the pass is open: the flow stops for the new wallet
+  await d.page.evaluate(() => (window as any).__providers["io.metamask"].__switch(1));
+  await d.page.locator("#flylist-title", { hasText: "Wallet changed" }).waitFor({ timeout: 10_000 });
+  check("wallet account switch: FLYLIST shows 'Wallet changed'", true);
   check("no page errors (desktop)", d.errors.length === 0);
   if (d.errors.length) console.log(d.errors);
   await d.context.close();
@@ -195,11 +174,11 @@ try {
   // ---------- desktop with only Phantom: MetaMask / Rabby are "Get" tiles ----------
   const g = await open(browser, [keyA], [PHANTOM], { viewport: { width: 1366, height: 900 } });
   await g.page.goto(WEB);
-  await connectBtn(g.page).click();
+  await flylist(g.page).click();
   const gNames = await tileNames(g.page);
   console.log("      tiles:", gNames.join(" | "));
   check("not installed: MetaMask and Rabby marked", gNames.includes("MetaMask (not installed)") && gNames.includes("Rabby (not installed)"));
-  await g.page.locator(".pass--wallet").screenshot({ path: `${OUT}/04-desktop-not-installed.png` });
+  await g.page.locator(".pass--modal").screenshot({ path: `${OUT}/04-desktop-not-installed.png` });
   await g.page.getByRole("button", { name: "MetaMask (not installed)" }).click();
   const get = g.page.getByRole("link", { name: "Get MetaMask" });
   check("not installed: install link to metamask.io", (await get.getAttribute("href")) === "https://metamask.io/download/");
@@ -214,7 +193,7 @@ try {
     return route.fulfill({ status: 200, body: "deep link" });
   });
   await m.page.goto(WEB);
-  await connectBtn(m.page).tap();
+  await flylist(m.page).tap();
   await m.page.locator(".wgrid").waitFor();
   await m.page.screenshot({ path: `${OUT}/05-mobile-grid.png` });
   const mNames = await tileNames(m.page);

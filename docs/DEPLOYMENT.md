@@ -100,8 +100,8 @@ read), and stops before registering anything. Never point `SMOKE_DB_URL` at prod
   already registered". Try a near-empty wallet and confirm "Not eligible yet" with sensible numbers.
 - Wallets (owner brief: test before deploying). Desktop: MetaMask, Rabby and Coinbase Wallet extensions, plus
   WalletConnect QR from a phone. Phone: MetaMask tile in Safari/Chrome (deep link into MetaMask's browser),
-  WalletConnect into another wallet app, and inside a wallet app's own browser. Switch wallets from CONNECT WALLET
-  and mid-flow, and re-open FLY LIST with a registered wallet ("Wallet already registered"). The automated
+  WalletConnect into another wallet app, and inside a wallet app's own browser. Switch accounts/wallets
+  mid-flow, and re-open FLY LIST with a registered wallet ("Wallet already registered"). The automated
   versions are `npm run e2e:wallets` and `npm run e2e:ui` (mock wallets; they don't replace real devices).
 - `/admin/allowlist`: sign in with an admin wallet, edit a status, Export CSV, and open the file in Excel or Google Sheets.
 - After the first real traffic, check that rate limiting sees real client IPs: in the SQL editor,

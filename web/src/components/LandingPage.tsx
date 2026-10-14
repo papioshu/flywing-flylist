@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { api, type Campaign } from "../lib/api";
-import { ConnectWallet } from "./ConnectWallet";
 import { FlylistApply } from "./FlylistApply";
 
 // The public FLYLIST landing page, built to RichFox's landing wireframe (2026-10-14): one full-screen
-// cloud graphic with the FLY WING wordmark baked in, and a white FLY LIST pill under it, plus a small
-// CONNECT WALLET in the corner (owner's wallet brief).
+// cloud graphic with the FLY WING wordmark baked in, and a white FLY LIST pill under it. FLY LIST is the
+// only wallet entry point (owner: no second connect button).
 // The registration terms and privacy notice live in the FLYLIST modal, before any wallet connects.
 export function LandingPage() {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -37,10 +36,6 @@ export function LandingPage() {
       <h1 className="visually-hidden">FLY WING GENESIS FLYLIST</h1>
       <div className="landing__overlay">
         <FlylistApply campaign={campaign} />
-      </div>
-      {/* Not in the wireframe: the owner's wallet brief asks for a CONNECT WALLET that only connects. */}
-      <div className="landing__wallet">
-        <ConnectWallet />
       </div>
       <p className="landing__credit">Art by RichFox</p>
     </main>
