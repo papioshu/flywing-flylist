@@ -2,6 +2,7 @@
 // secrets in production, process.env in local dev/tests).
 
 import { CHAINLINK_ETH_USD_MAINNET, DEFAULT_ELIGIBILITY_RPC_URLS } from "./eligibility.ts";
+import { INTEGRATIONS } from "./policy.ts";
 
 export type AppConfig = {
   campaignId: string;
@@ -28,6 +29,14 @@ export type AppConfig = {
   /** Max fresh eligibility evaluations per wallet per 10 minutes (each costs RPC calls). */
   eligibilityChecksPerWallet: number;
   providerTimeoutMs: number;
+  /**
+   * Deferred integrations explicitly switched on (ENABLED_INTEGRATIONS). Empty by default:
+   * X verification, community (partner NFT) gating and access-code gating stay off until
+   * the owner approves them. Even when listed, a campaign must still select them.
+   */
+  enabledIntegrations: ReadonlySet<string>;
+  /** Pepper for hashing access codes (ACCESS_CODE_PEPPER, falls back to IP_HASH_SALT). */
+  accessCodePepper: string;
 };
 
 export type EnvReader = (name: string) => string | undefined;
@@ -69,6 +78,13 @@ export function loadConfig(env: EnvReader): AppConfig {
   const feed = (env("CHAINLINK_ETH_USD_FEED") ?? CHAINLINK_ETH_USD_MAINNET) as `0x${string}`;
   if (!/^0x[0-9a-fA-F]{40}$/.test(feed)) throw new Error("CHAINLINK_ETH_USD_FEED must be an address");
 
+  const enabledIntegrations = new Set(list(env("ENABLED_INTEGRATIONS")));
+  for (const i of enabledIntegrations) {
+    if (!(INTEGRATIONS as readonly string[]).includes(i)) throw new Error(`ENABLED_INTEGRATIONS has an unknown integration: ${i}`);
+  }
+  const accessCodePepper = env("ACCESS_CODE_PEPPER") ?? ipHashSalt;
+  if (accessCodePepper.length < 16) throw new Error("ACCESS_CODE_PEPPER must be at least 16 characters");
+
   return {
     campaignId: env("CAMPAIGN_ID") ?? "fwg-genesis",
     allowedOrigins,
@@ -85,5 +101,7 @@ export function loadConfig(env: EnvReader): AppConfig {
     eligibilityCacheSeconds: int(env("ELIGIBILITY_CACHE_SECONDS"), 300),
     eligibilityChecksPerWallet: int(env("ELIGIBILITY_CHECKS_PER_WALLET"), 10),
     providerTimeoutMs: int(env("PROVIDER_TIMEOUT_MS"), 8000),
+    enabledIntegrations,
+    accessCodePepper,
   };
 }

@@ -225,8 +225,13 @@ describe("campaign policy", () => {
     const r = await t.call("GET", "/campaign");
     expect(r.json.campaign.requirements).toEqual({
       accessMode: "open",
+      accessCodeRequired: false,
+      accessCodeAccepted: false,
       ethBalance: { minUsd: "55.00", chains: [{ chainId: 1, chainName: "Ethereum" }, { chainId: 4663, chainName: "Robinhood Chain" }], rule: "any_one_chain" },
+      xAuthRequired: false,
       xFollowRequired: false,
+      requiredXAccounts: [],
+      community: null,
     });
   });
 

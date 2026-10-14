@@ -69,31 +69,106 @@ judged on its own; balances are never summed. `$55` is USD-equivalent, not 0.055
 
 This is a registration-time check. It is not a mint allocation, and nothing is re-checked or revoked later.
 
-## Access policy (campaign row)
+## Campaign policy (`_shared/policy.ts`) — Phase B
 
-`allowlist.campaigns` holds the rules; each eligibility check stores a copy (`policy` jsonb), so later edits never
-rewrite how a historical result was reached.
+The policy has three layers (spec §7), plus campaign status and provider settings:
 
-| Column | Current | Meaning |
+| Layer | Fields (camelCase in the API, snake_case columns on `allowlist.campaigns`) | Current value |
 |---|---|---|
-| `access_mode` | `open` | `open` / `invite_code` / `community` / `hybrid`. **Only `open` is implemented**; a CHECK constraint (`campaigns_access_mode_implemented`) blocks the others until they are built. |
-| `eth_balance_check_enabled` | true | The $55 check. Off → everyone passes with no RPC calls. |
-| `min_eth_balance_usd_cents` | 5500 | |
-| `eth_balance_chain_ids` | `{1,4663}` | Any one chain qualifies. |
-| `x_follow_required` | false | Owner decision: X is not required for this campaign. |
-| `allow_provisional_registration` | false | Only matters when something required can't be verified yet. |
+| Campaign status | `status`, `opensAt`, `closesAt` | open, no window |
+| **Registration requirements** (what it takes to apply) | `accessMode` (`open` / `invite_code` / `community` / `hybrid`), `ethBalanceCheckEnabled`, `minEthBalanceUsdCents`, `ethBalanceChainIds` | open, $55, `{1,4663}` |
+| **Verification requirements** (what must be proven before eligible) | `xAuthRequired`, `xFollowRequired`, `requiredXAccounts` (`[{id, username}]`, numeric IDs), `allowProvisionalRegistration`; community rule `communityProvider`, `nftRule` (`any`/`all`/`min_n`), `nftMinCollections`, `hybridRule` (`code_or_community`/`code_and_community`) | X not required (owner decision D009) |
+| **Mint eligibility** (what reaches the final list) | always admin `approved`; `finalExportIncludesUnverified` decides whether approved wallets with incomplete required verifications are included | false |
+| Provider settings / budget | `xProvider` (only `none` is implemented), `xVerificationCacheSeconds` (30 d), `xRetryCooldownSeconds` (300), `xBudgetDailyUnits` / `xBudgetTotalUnits` (0 / 0) | none, zero budget |
 
-Status decision (`decideStatus`): if X follow is required and not verifiable (always, today), the applicant is refused
-(`VERIFICATION_UNAVAILABLE`) unless provisional registration is allowed, in which case they're recorded as
-`pending_verification` / eligibility `pending`. Otherwise a passing wallet is `eligible`. Nothing ever marks an X handle
-verified or claims a follow.
+**Versioning.** `campaigns.policy_version` is the live version. Every change goes through `PATCH /admin/policy`
+(`updatePolicy()`): one SQL statement updates the campaign row **and** appends the full snapshot to
+`allowlist.campaign_policies` (append-only: a trigger rejects UPDATE/DELETE), guarded by `expectedVersion` (409 on a
+concurrent edit). Each `eligibility_checks` row, `nft_ownership_checks` row, `x_verifications` row and registration
+records the `policy_version` it was evaluated under, and a cached eligibility result is only reused under the same
+version. History is never rewritten. (Editing the campaign row with raw SQL bypasses versioning; don't.)
 
-Deferred (Phase B/C, not built): X OAuth + follow provider, NFT ownership provider + partner collections, invite codes,
-admin policy UI, API budgets. See the vault spec (`Mint Site/FLYLIST SPEC.md`).
+**Deferred integrations are refused server-side** unless activated. Activation needs **both** an
+`ENABLED_INTEGRATIONS` entry (`x_verification`, `community_gating`, `access_codes`; unknown names fail at startup)
+**and** the campaign selecting it:
+
+| Change | Refused with |
+|---|---|
+| `accessMode` invite_code / hybrid without `access_codes` | 403 `INTEGRATION_DISABLED` |
+| `accessMode` community / hybrid without `community_gating` | 403 `INTEGRATION_DISABLED` |
+| community mode with no active partner collection (or `min_n` > active) | 400 `NO_COLLECTIONS` / `INVALID_POLICY` |
+| any non-`open` mode while the D013 DB lock is in place | 409 `ACCESS_MODE_LOCKED` |
+| `xProvider` other than `none` | 403 `PROVIDER_NOT_IMPLEMENTED` (and `INTEGRATION_DISABLED` without the flag) |
+| X required while no X provider works and provisional is off | 400 `WOULD_BLOCK_REGISTRATION` |
+| `xFollowRequired` with no accounts listed | 400 `INVALID_POLICY` |
+| ETH chain without an RPC URL | 400 `UNSUPPORTED_CHAIN` |
+
+**How to enable a deferred mode later (owner approval first):** add the integration to `ENABLED_INTEGRATIONS`;
+for invite/community/hybrid also ship a migration that drops `campaigns_access_mode_implemented` (D013); for X, build
+and register a real provider (Phase C) and give it a non-zero budget. Then select it in the admin policy tab.
+
+**Status decision** (`decideStatus`):
+- No X requirement → `eligible`, `verification_status = not_required`.
+- X requirement satisfied by a real verification → `eligible`, `verified`.
+- Verified "not following" / auth denied → refused (`X_REQUIREMENT_NOT_MET`).
+- Otherwise, with provisional registration on → `pending_verification`, `pending`.
+- Otherwise → refused (`X_VERIFICATION_REQUIRED`, or `VERIFICATION_UNAVAILABLE` when no provider works).
+
+A later successful verification promotes a pending registration to `eligible` (system audit entry). A failed one sets
+`verification_status = failed` but never silently rejects it; rejecting is an admin decision.
+
+## X verification (`_shared/xverify.ts`)
+
+Two separate operations: **account authentication** (OAuth 2.0 + PKCE S256; `status`) and **follow verification**
+against `requiredXAccounts` (`follow_status`). Statuses: `not_configured`, `not_started`, `pending`, `verified`,
+`failed`, `unavailable` (follow status adds `not_required`).
+
+- `XVerificationProvider` interface: `authorizeUrl` (free), `completeAuth` (billable), `checkFollows` (billable),
+  `estimate` units. **Only `notConfiguredXProvider` ships**: it never makes a network call. No scraping, no browser
+  automation, no credential collection.
+- `POST /me/verification/x/start` stores a single-use, wallet-bound, 10-minute state (only its SHA-256) and the PKCE
+  verifier server-side, and returns the authorize URL. `POST /me/verification/x/complete {state, code}` consumes the
+  state atomically, then authenticates and checks follows in one step (no OAuth tokens are stored).
+- A provider error or an unknown follow answer is `unavailable`, never "does not follow". Only an explicit `false`
+  is `failed`.
+- **Cost controls** (all enforced and tested against a fake provider): the provider only counts when activated AND
+  selected; a verified result is reused until `verified_until` (no per-visit re-check); retry cooldown per wallet;
+  hourly caps per wallet (5), per X account (5) and per IP (20) from the usage ledger; a daily + total budget
+  reserved **before** each billable call with one conditional UPDATE on `provider_budgets` (concurrent requests can't
+  overshoot), then settled with actual units; every call is logged in `provider_usage` (estimated + actual units,
+  outcome, refusals). Budget exhausted → 503 `X_BUDGET_EXHAUSTED`, no call made.
+
+## Community rule: partner NFT ownership (`_shared/nft.ts`)
+
+`CommunityEligibilityProvider` interface; the shipped provider is `nft_ownership`, which reads on-chain over the same
+RPC config as the ETH check (no indexer):
+
+- **ERC-721**: collection-wide `balanceOf(owner)`, or `ownerOf(id)` per configured token ID (a reverting `ownerOf`, i.e.
+  burned/unminted, counts as not held).
+- **ERC-1155**: `balanceOf(owner, id)` for each configured ID, summed against `min_quantity`.
+- Every read is pinned to one block and `eth_chainId` must match the collection's chain, so ownership on the wrong
+  chain never counts. Empty `eth_call` data → "No contract at this address on chain N".
+- Rules: `any`, `all`, `min_n`. An unreadable collection that could change the answer → `unavailable`.
+- Snapshot per evaluation in `nft_ownership_checks` (collection, contract, chain, standard, quantity, block, source
+  `rpc`, result, policy version). Wallets can qualify through several collections. Registration-time only
+  (`purpose = registration`; `mint` reserved for a separate mint-time re-check); a later transfer never revokes a
+  registration.
+- Used only in `community` / `hybrid` modes. **No partner collections are configured** and none may be invented.
+
+## Access codes (`_shared/accessCodes.ts`)
+
+`FLY-XXXXX-XXXXX-XXXXX-XXXXX` (100 random bits, look-alike-free base32), shown once, stored as SHA-256 of
+`ACCESS_CODE_PEPPER` + code; admins see only a 9-char prefix. Optional expiry, max redemptions, revocation, campaign
+scope, community attribution. Redemption is one statement: the code row is locked `FOR UPDATE`, every rule is
+re-checked on the locked row, and the counter + redemption row are written together, so concurrent redemptions of a
+1-use code give exactly one success. One redemption per wallet per campaign. Refusals get one generic message
+(no probing) and the real reason in `access_code_audit`. If the registration insert then loses a race, the redemption
+is released. A code is never proof of NFT ownership. Only consulted in `invite_code` / `hybrid` modes.
 
 ## Database schema
 
-Migrations: `20261012000000_allowlist_registration.sql` (base), `20261013000000_flylist_eligibility.sql` (FLYLIST).
+Migrations: `20261012000000_allowlist_registration.sql` (base), `20261013000000_flylist_eligibility.sql` (FLYLIST
+Phase A), `20261014000000_flylist_verification.sql` (Phase B: policy history, verification tables).
 
 | Table | Purpose |
 |---|---|
@@ -101,6 +176,13 @@ Migrations: `20261012000000_allowlist_registration.sql` (base), `20261013000000_
 | `allowlist.registrations` | One row per wallet per campaign. **Unique (`campaign_id`, `wallet_address_normalized`).** |
 | `allowlist.eligibility_checks` | Server-side evaluations: result, policy copy, price/source/time, best chain + wei + cents, per-chain snapshots (`chains` jsonb: chainId, status, balanceWei, blockNumber, usdCents, passed, error), expiry (cache). |
 | `allowlist.registration_audit` | Append-only history: who (wallet + role), what (`changes` jsonb from/to), when. |
+| `allowlist.campaign_policies` | Append-only policy history (trigger-enforced): version, full snapshot, who, why. |
+| `allowlist.x_verifications` | Per wallet: X auth `status`, verified `x_user_id`/`x_username`, `follow_status` + `follows`, `verified_until`, attempts, policy version. |
+| `allowlist.x_oauth_states` | Pending OAuth/PKCE handshakes (state hash, verifier, wallet, expiry, single use). |
+| `allowlist.provider_budgets` / `provider_usage` | Paid-API budget counters (daily + total) and the call ledger (estimated/actual units, outcome). |
+| `allowlist.partner_collections` (+ `_audit`) | Community rule config: name, chain, contract, standard, min quantity, token IDs, active. Unique per (campaign, chain, contract). Empty. |
+| `allowlist.nft_ownership_checks` | Ownership snapshots per evaluation (see above). |
+| `allowlist.access_codes` / `access_code_redemptions` / `access_code_audit` | Hashed codes, redemptions (one per wallet per campaign), full event log. |
 | `allowlist.auth_nonces` | Single-use SIWE nonces bound to wallet, chain, purpose, expiry. |
 | `allowlist.sessions` | Bearer sessions; only SHA-256 of the token is stored. |
 | `allowlist.rate_limits` | Fixed one-minute windows per bucket + salted hash of client IP. |
@@ -112,7 +194,13 @@ migration's `waitlisted` maps to `pending_verification`, `removed` to `rejected`
 (not_checked / pending / eligible / ineligible), `eligibility_checked_at`, `access_method`, the eligibility snapshot
 (`eligibility_check_id`, `eth_balance_wei` numeric(78), `eth_usd_price` + `_decimals`, `eth_usd_price_source`,
 `eth_usd_price_at`, `eth_balance_usd_cents`, `eligibility_chain_id`), SIWE proof metadata (`verification_chain_id`,
-`verification_method`, `verification_timestamp`), `admin_notes`, timestamps.
+`verification_method`, `verification_timestamp`), `admin_notes`, timestamps. Phase B adds `policy_version`,
+`verification_status` (not_required / pending / verified / failed), `nft_status`, `nft_check_id`, `access_code_id`,
+`community_attribution`.
+
+**jsonb parameters** are always sent as text and cast on the server (`$n::text::jsonb`). postgres.js (production)
+JSON-encodes values bound to a jsonb parameter, so a pre-serialized string would otherwise be stored as a JSON
+*string*. Phase A's `eligibility_checks.policy`/`chains` hit this; the Phase B migration unwraps any such rows.
 
 **Not stored:** signatures, private keys, seed phrases, raw IP addresses, raw session tokens.
 
@@ -141,20 +229,30 @@ CSRF: no cookies; bearer header; JSON-only state changes (forces preflight); for
 | POST | `/auth/verify` | none | Signature verification → session token |
 | POST | `/auth/logout` | session | Revoke session |
 | GET | `/me/registration` | session | Own registration (+ campaign). No admin notes, no snapshot internals. |
-| POST | `/me/eligibility` | session | Own eligibility: `{walletAddress, registration, eligibility}`. Registered → no check. Closed → 403. |
-| POST | `/me/registration` | session | `{twitterUsername}` → 201; 409 `ALREADY_REGISTERED`; 403 `INELIGIBLE` (with figures); 503 `ELIGIBILITY_UNAVAILABLE`; 403 `REGISTRATION_CLOSED` / `VERIFICATION_UNAVAILABLE` |
+| POST | `/me/eligibility` | session | Own eligibility: `{walletAddress, registration, eligibility, verification}`. Registered → no check. Closed → 403. |
+| GET | `/me/verification` | session | Own X verification + NFT status |
+| POST | `/me/verification/x/start` | session | Begin X OAuth (returns `not_configured` today) |
+| POST | `/me/verification/x/complete` | session | `{state, code}` OAuth callback; 409 `X_NOT_CONFIGURED` today |
+| POST | `/me/registration` | session | `{twitterUsername, accessCode?}` → 201; 409 `ALREADY_REGISTERED`; 403 `INELIGIBLE` (with figures); 503 `ELIGIBILITY_UNAVAILABLE`; 403 `REGISTRATION_CLOSED` / `VERIFICATION_UNAVAILABLE` |
 | PATCH | `/me/registration` | session | Correct own X username (while open) |
 | GET | `/admin/stats` | admin | Totals, today, unique wallets, counts by status |
 | GET | `/admin/registrations` | admin | `q`, `registrationStatus`, `eligibilityStatus`, `from`, `to`, `sort`, `dir`, `page`, `pageSize≤100` |
 | PATCH | `/admin/registrations/:id` | admin | `{registrationStatus?, eligibilityStatus?, adminNotes?}` + audit row |
 | GET | `/admin/registrations/:id/audit` | admin | History |
 | GET | `/admin/export.csv` | admin | Full dataset CSV; same filters as the list, plus `preset` |
+| GET / PATCH | `/admin/policy` | admin | Current policy, grouped view, integration state, history / `{expectedVersion, changes, reason}` |
+| GET / POST | `/admin/collections` | admin | Partner collections / add one (audited) |
+| PATCH | `/admin/collections/:id` | admin | Name, min quantity, token IDs, active (chain/contract/standard are immutable) |
+| POST | `/admin/collections/test` | admin | Read-only ownership check of any wallet against the active collections |
+| GET / POST | `/admin/access-codes` | admin | List (prefix only) / generate (plaintext returned once) |
+| POST | `/admin/access-codes/:id/revoke` | admin | Revoke (audited) |
+| GET | `/admin/usage` | admin | Paid-API budgets and the usage ledger |
 
 There is no public endpoint that lists registrations or wallet→X pairs. Admin = admin-purpose SIWE session **and**
 wallet currently in `ADMIN_WALLETS`, re-checked every request.
 
 Rate limits (per client IP per minute): campaign 60, nonce 20, verify 20, me 60, eligibility 10, register/update 10,
-admin 300, export 10.
+verification 20, admin 300, export 10, admin collection test 10.
 
 ## CSV exports
 
@@ -167,14 +265,17 @@ starting with `=`, `+`, `-`, `@`, tab, CR, LF (or full-width `＝＋－＠`) get
 | `all` (default) | everything matching the filters | `flylist-all-YYYY-MM-DD.csv` |
 | `pending_verification` | status `pending_verification` | `flylist-pending-verification-…` |
 | `eligible` | status `eligible` or `approved` | `flylist-eligible-approved-…` |
-| `final` | status **`approved` only** (admin decision) | `flylist-final-mint-allowlist-…` |
+| `final` | status **`approved` only** (admin decision), and `verification_status` not_required/verified unless the policy's `finalExportIncludesUnverified` is on | `flylist-final-mint-allowlist-…` |
 
 Pending or merely eligible wallets never appear in the final export.
 
 Columns: `registration_id, campaign_id, wallet_address, twitter_username, twitter_url, twitter_verification`
 (`unverified (self-reported)`), `registration_status, eligibility_status, access_method, registered_at_utc,
 updated_at_utc, eligibility_checked_at_utc, eligibility_chain_id, eth_balance_wei, eth_balance_eth, eth_usd_price,
-eth_usd_price_source, eth_usd_price_at_utc, balance_usd_at_registration, signin_chain_id, admin_notes`.
+eth_usd_price_source, eth_usd_price_at_utc, balance_usd_at_registration, signin_chain_id, policy_version,
+verification_status, x_auth_status, x_verified_user_id, x_follow_status, nft_holder_status, qualifying_collections,
+access_code` (prefix + label, never the code), `community_attribution, approval_status, admin_notes`.
+`twitter_verification` reads `verified via X (@handle)` only after a real X verification.
 
 ## Future mint integration (not built yet)
 

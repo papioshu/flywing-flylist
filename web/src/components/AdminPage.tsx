@@ -3,6 +3,7 @@ import { useAccount, useDisconnect, useSignMessage, useSwitchChain } from "wagmi
 import { api, ApiError, download } from "../lib/api";
 import { clearToken, getToken, isUserRejection, shortAddress, signIn } from "../lib/session";
 import { FALLBACK_CHAIN_ID, SUPPORTED_CHAIN_IDS } from "../lib/wagmi";
+import { AccessCodesPanel, CollectionsPanel, PolicyPanel, UsagePanel } from "./AdminSettings";
 import { WalletPicker } from "./WalletPicker";
 
 type Row = {
@@ -27,6 +28,18 @@ type Row = {
   ethUsdPriceAt: string | null;
   balanceUsd: string | null;
   campaignId: string;
+  policyVersion: number | null;
+  verificationStatus: string;
+  approvalStatus: string;
+  xAuthStatus: string;
+  xVerifiedUserId: string | null;
+  xVerifiedUsername: string | null;
+  xFollowStatus: string;
+  xFollows: { accountId: string; username: string; following: boolean | null }[];
+  nftStatus: string;
+  qualifyingCollections: string[];
+  accessCode: { prefix: string; label: string | null } | null;
+  communityAttribution: string | null;
   handleSharedCount?: number;
 };
 type Stats = {
@@ -41,6 +54,15 @@ type Audit = { id: number; actorWallet: string; actorRole: string; action: strin
 
 const REG = ["registered", "pending_verification", "eligible", "ineligible", "approved", "rejected"];
 const ELIG = ["not_checked", "pending", "eligible", "ineligible"];
+const VERIF = ["not_required", "pending", "verified", "failed"];
+const TABS = [
+  { id: "registrations", label: "Registrations" },
+  { id: "policy", label: "Campaign policy" },
+  { id: "collections", label: "Partner collections" },
+  { id: "codes", label: "Access codes" },
+  { id: "usage", label: "API usage & budget" },
+] as const;
+type Tab = (typeof TABS)[number]["id"];
 const CHAIN: Record<number, string> = { 1: "Ethereum", 4663: "Robinhood" };
 const COLUMNS: { key: string; label: string; sortable: boolean }[] = [
   { key: "registeredAt", label: "Registered (UTC)", sortable: true },
@@ -48,6 +70,7 @@ const COLUMNS: { key: string; label: string; sortable: boolean }[] = [
   { key: "twitterUsername", label: "X username", sortable: true },
   { key: "registrationStatus", label: "Status", sortable: true },
   { key: "eligibilityStatus", label: "Eligibility", sortable: true },
+  { key: "verification", label: "Verification", sortable: false },
   { key: "balance", label: "ETH at registration", sortable: false },
   { key: "notes", label: "Notes", sortable: false },
 ];
@@ -155,6 +178,32 @@ export function AdminPage() {
 }
 
 function Dashboard({ token, onAuthLost }: { token: string; onAuthLost: (msg: string) => void }) {
+  const [tab, setTab] = useState<Tab>("registrations");
+  const handle = useCallback(
+    (e: unknown) => {
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) onAuthLost(e.message);
+    },
+    [onAuthLost],
+  );
+  return (
+    <>
+      <nav className="tabs" role="tablist" aria-label="Admin sections">
+        {TABS.map((t) => (
+          <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tabs__tab${tab === t.id ? " is-active" : ""}`} onClick={() => setTab(t.id)}>
+            {t.label}
+          </button>
+        ))}
+      </nav>
+      {tab === "registrations" && <Registrations token={token} onAuthLost={onAuthLost} />}
+      {tab === "policy" && <PolicyPanel token={token} onError={handle} />}
+      {tab === "collections" && <CollectionsPanel token={token} onError={handle} />}
+      {tab === "codes" && <AccessCodesPanel token={token} onError={handle} />}
+      {tab === "usage" && <UsagePanel token={token} onError={handle} />}
+    </>
+  );
+}
+
+function Registrations({ token, onAuthLost }: { token: string; onAuthLost: (msg: string) => void }) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [total, setTotal] = useState(0);
@@ -168,6 +217,7 @@ function Dashboard({ token, onAuthLost }: { token: string; onAuthLost: (msg: str
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [eligibility, setEligibility] = useState("");
+  const [verification, setVerification] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [sort, setSort] = useState("registeredAt");
@@ -180,17 +230,18 @@ function Dashboard({ token, onAuthLost }: { token: string; onAuthLost: (msg: str
     const t = setTimeout(() => setSearch(q.trim()), 300);
     return () => clearTimeout(t);
   }, [q]);
-  useEffect(() => setPage(1), [search, status, eligibility, from, to, sort, dir]);
+  useEffect(() => setPage(1), [search, status, eligibility, verification, from, to, sort, dir]);
 
   const filterQuery = useCallback(() => {
     const p = new URLSearchParams();
     if (search) p.set("q", search);
     if (status) p.set("registrationStatus", status);
     if (eligibility) p.set("eligibilityStatus", eligibility);
+    if (verification) p.set("verificationStatus", verification);
     if (from) p.set("from", from);
     if (to) p.set("to", to);
     return p;
-  }, [search, status, eligibility, from, to]);
+  }, [search, status, eligibility, verification, from, to]);
 
   const handle = useCallback(
     (e: unknown) => {
@@ -250,7 +301,7 @@ function Dashboard({ token, onAuthLost }: { token: string; onAuthLost: (msg: str
     }
   }
 
-  const filtered = search || status || eligibility || from || to;
+  const filtered = search || status || eligibility || verification || from || to;
 
   return (
     <>
@@ -296,6 +347,14 @@ function Dashboard({ token, onAuthLost }: { token: string; onAuthLost: (msg: str
         <select className="field" value={eligibility} onChange={(e) => setEligibility(e.target.value)} aria-label="Eligibility">
           <option value="">All eligibility</option>
           {ELIG.map((s) => (
+            <option key={s} value={s}>
+              {s.replace("_", " ")}
+            </option>
+          ))}
+        </select>
+        <select className="field" value={verification} onChange={(e) => setVerification(e.target.value)} aria-label="Verification">
+          <option value="">All verification</option>
+          {VERIF.map((s) => (
             <option key={s} value={s}>
               {s.replace("_", " ")}
             </option>
@@ -352,6 +411,10 @@ function Dashboard({ token, onAuthLost }: { token: string; onAuthLost: (msg: str
                 </td>
                 <td data-label="Eligibility">
                   <span className={`tag tag--${r.eligibilityStatus}`}>{r.eligibilityStatus.replace("_", " ")}</span>
+                </td>
+                <td data-label="Verification" title={`X: ${r.xAuthStatus.replace("_", " ")} · follows: ${r.xFollowStatus.replace("_", " ")} · NFT: ${r.nftStatus.replace("_", " ")}`}>
+                  <span className={`tag tag--v-${r.verificationStatus}`}>{r.verificationStatus.replace("_", " ")}</span>
+                  {r.accessMethod !== "open" && <span className="muted"> · {r.accessMethod.replace("_", " ")}</span>}
                 </td>
                 <td className="mono" data-label="ETH" title={r.ethBalanceWei ? `${r.ethBalanceWei} wei` : undefined}>
                   {r.balanceUsd ? `$${r.balanceUsd}` : "—"}
@@ -496,6 +559,38 @@ function Editor({
         </dd>
         <dt>USD at registration</dt>
         <dd className="mono">{row.balanceUsd ? `$${row.balanceUsd}` : "—"}</dd>
+        <dt>Policy version</dt>
+        <dd className="mono">{row.policyVersion ?? "—"}</dd>
+        <dt>Verification</dt>
+        <dd className="mono">{row.verificationStatus.replace("_", " ")}</dd>
+        <dt>X account</dt>
+        <dd>
+          {row.xAuthStatus === "verified" ? (
+            <>
+              verified as <span className="mono">@{row.xVerifiedUsername}</span> (ID <span className="mono">{row.xVerifiedUserId}</span>)
+            </>
+          ) : (
+            <span className="mono">{row.xAuthStatus.replace("_", " ")}</span>
+          )}
+        </dd>
+        <dt>Required follows</dt>
+        <dd>
+          <span className="mono">{row.xFollowStatus.replace("_", " ")}</span>
+          {row.xFollows.length > 0 && (
+            <span className="muted"> ({row.xFollows.map((f) => `@${f.username}: ${f.following === null ? "unknown" : f.following ? "yes" : "no"}`).join(", ")})</span>
+          )}
+        </dd>
+        <dt>NFT holder</dt>
+        <dd>
+          <span className="mono">{row.nftStatus.replace("_", " ")}</span>
+          {row.qualifyingCollections.length > 0 && <span className="muted"> · {row.qualifyingCollections.join(", ")}</span>}
+        </dd>
+        <dt>Access code</dt>
+        <dd className="mono">{row.accessCode ? `${row.accessCode.prefix}…${row.accessCode.label ? ` (${row.accessCode.label})` : ""}` : "—"}</dd>
+        <dt>Community</dt>
+        <dd>{row.communityAttribution ?? "—"}</dd>
+        <dt>Approval</dt>
+        <dd className="mono">{row.approvalStatus}</dd>
       </dl>
       <label className="form__label">Registration status</label>
       <select className="field" value={status} onChange={(e) => setStatus(e.target.value)}>

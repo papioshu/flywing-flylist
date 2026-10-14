@@ -267,7 +267,8 @@ try {
   await a.page.waitForTimeout(800);
   check("admin search: exactly one row for the double-submitted wallet", (await a.page.locator("tbody tr").count()) === 1);
 
-  await a.page.locator("tbody tr").first().click();
+  // Click the date cell: the row's centre can land on the X profile link, which opens X instead.
+  await a.page.locator("tbody tr").first().locator("td").first().click();
   await a.page.locator(".drawer select").first().selectOption("approved");
   await a.page.locator(".drawer textarea").fill('=HYPERLINK("http://evil","x"), test note');
   await a.page.getByRole("button", { name: "Save changes" }).click();
@@ -293,6 +294,52 @@ try {
   await fin.saveAs(finFile);
   const finCsv = readFileSync(finFile, "utf8");
   check(`final export ${fin.suggestedFilename()}: approved wallet in, others out`, finCsv.includes(H2) && !finCsv.includes(HM) && finCsv.trim().split("\r\n").slice(1).every((l) => l.includes('"approved"')));
+  check("drawer shows verification fields (not required, self-reported)", /policy version/i.test(drawer) && /not required/i.test(drawer) && /self-reported, unverified/i.test(drawer) && /NFT holder/i.test(drawer));
+  check("CSV has the Phase B verification columns", ['"verification_status"', '"x_auth_status"', '"nft_holder_status"', '"access_code"', '"approval_status"'].every((c) => csv.includes(c)));
+
+  // ---------- admin: Phase B configuration ----------
+  await a.page.getByRole("tab", { name: "Campaign policy" }).click();
+  await a.page.getByText(/^Policy version \d+$/).waitFor({ timeout: 15_000 });
+  await a.page.screenshot({ path: `${OUT}/13-admin-policy.png`, fullPage: true });
+  const policyText = await a.page.locator(".settings").innerText();
+  check(
+    "policy shows every deferred integration off",
+    /X verification activated: off/i.test(policyText) && /Community gating activated: off/i.test(policyText) && /Access codes activated: off/i.test(policyText),
+  );
+  const modeSelect = a.page.locator("select").filter({ has: a.page.locator('option[value="invite_code"]') });
+  check("invite / community modes are disabled in the picker", (await modeSelect.locator('option[value="invite_code"]').isDisabled()) && (await modeSelect.locator('option[value="community"]').isDisabled()));
+  const cooldown = a.page.getByLabel("Retry cooldown (s)");
+  await cooldown.fill("301");
+  await a.page.getByPlaceholder(/owner approved/).fill("ui e2e");
+  await a.page.getByRole("button", { name: "Save policy" }).click();
+  await a.page.getByText(/Saved as policy version \d+/).waitFor({ timeout: 15_000 });
+  check("policy save creates a new version", true);
+  await a.page.getByLabel("Retry cooldown (s)").fill("300");
+  await a.page.getByRole("button", { name: "Save policy" }).click();
+  await a.page.getByText(/Saved as policy version \d+/).waitFor({ timeout: 15_000 });
+  check("policy history lists the e2e change", (await a.page.locator(".settings .audit").innerText()).includes("ui e2e"));
+
+  await a.page.getByRole("tab", { name: "Partner collections" }).click();
+  await a.page.getByText("No partner collections configured.").waitFor({ timeout: 15_000 });
+  await a.page.screenshot({ path: `${OUT}/14-admin-collections.png`, fullPage: true });
+  check("no partner collections configured", true);
+
+  await a.page.getByRole("tab", { name: "Access codes" }).click();
+  await a.page.getByRole("button", { name: "Generate" }).waitFor({ timeout: 15_000 });
+  await a.page.getByRole("button", { name: "Generate" }).click();
+  const once = a.page.locator(".codes-once pre");
+  await once.waitFor({ timeout: 15_000 });
+  const shown = (await once.innerText()).trim();
+  check("generated code shown once", /^FLY-[0-9A-Z]{5}(-[0-9A-Z]{5}){3}$/.test(shown));
+  await a.page.screenshot({ path: `${OUT}/15-admin-access-codes.png`, fullPage: true });
+  await a.page.locator("tbody tr").first().getByRole("button", { name: "Revoke" }).click();
+  await a.page.locator("tbody tr").first().getByText("revoked").waitFor({ timeout: 15_000 });
+  check("access code revoked from the UI; table shows only the prefix", !(await a.page.locator("tbody").innerText()).includes(shown));
+
+  await a.page.getByRole("tab", { name: /API usage/ }).click();
+  await a.page.getByText("No paid API calls have been made.").waitFor({ timeout: 15_000 });
+  await a.page.screenshot({ path: `${OUT}/16-admin-usage.png`, fullPage: true });
+  check("usage tab: no paid calls", true);
 
   const am = await walletPage(browser, [adminKey], { ...devices["iPhone 13"] });
   await am.page.goto(`${WEB}/admin/allowlist`);
@@ -300,6 +347,10 @@ try {
   await am.page.getByRole("button", { name: "Sign in" }).tap();
   await am.page.getByText("Total registrations").waitFor({ timeout: 15_000 });
   await am.page.screenshot({ path: `${OUT}/12-admin-mobile.png`, fullPage: true });
+  await am.page.getByRole("tab", { name: "Campaign policy" }).tap();
+  await am.page.getByText(/^Policy version \d+$/).waitFor({ timeout: 15_000 });
+  await am.page.screenshot({ path: `${OUT}/17-admin-policy-mobile.png`, fullPage: true });
+  check("policy tab renders on mobile without horizontal overflow", await am.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
   check("no page errors (admin)", a.errors.length === 0 && am.errors.length === 0);
 } finally {
   await browser.close();

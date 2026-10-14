@@ -5,6 +5,15 @@ import { COINBASE_SPOT_URL } from "../supabase/functions/_shared/eligibility.ts"
 
 export type FakeNet = ReturnType<typeof createFakeNet>;
 
+export type FakeNft = {
+  standard: "erc721" | "erc1155";
+  /** ERC-721: tokenId (decimal) -> owner (lowercase). */
+  owners: Map<string, string>;
+  /** ERC-1155: `${owner}:${tokenId}` -> balance. */
+  balances1155: Map<string, bigint>;
+  down?: boolean;
+};
+
 export function createFakeNet(rpcUrls: Record<number, string>, nowMs: () => number) {
   const state = {
     /** wallet (lowercase) -> chainId -> wei */
@@ -20,7 +29,32 @@ export function createFakeNet(rpcUrls: Record<number, string>, nowMs: () => numb
     /** If set, an RPC answers with this chain ID instead of its own (misconfigured URL). */
     wrongChainId: new Map<number, number>(),
     calls: [] as string[],
+    /** chainId -> contract (lowercase) -> fake NFT contract state. */
+    nfts: new Map<number, Map<string, FakeNft>>(),
+    /** Contracts whose reads fail (provider outage). */
+    nftDown: new Set<string>(),
   };
+
+  function nftCall(nft: FakeNft, data: string): string {
+    if (nft.down) throw new Error("upstream timeout");
+    const sel = data.slice(0, 10);
+    const arg = (i: number) => data.slice(10 + i * 64, 10 + (i + 1) * 64);
+    if (nft.standard === "erc721" && sel === "0x70a08231") {
+      const owner = `0x${arg(0).slice(24)}`;
+      return `0x${word(BigInt([...nft.owners.values()].filter((o) => o === owner).length))}`;
+    }
+    if (nft.standard === "erc721" && sel === "0x6352211e") {
+      const owner = nft.owners.get(BigInt(`0x${arg(0)}`).toString());
+      if (!owner) throw new Error("execution reverted: ERC721NonexistentToken");
+      return `0x${word(BigInt(owner))}`;
+    }
+    if (nft.standard === "erc1155" && sel === "0x00fdd58e") {
+      const owner = `0x${arg(0).slice(24)}`;
+      const id = BigInt(`0x${arg(1)}`).toString();
+      return `0x${word(nft.balances1155.get(`${owner}:${id}`) ?? 0n)}`;
+    }
+    throw new Error("execution reverted");
+  }
   const urlToChain = new Map(Object.entries(rpcUrls).map(([id, url]) => [url, Number(id)]));
   const word = (v: bigint) => (v < 0n ? (1n << 256n) + v : v).toString(16).padStart(64, "0");
 
@@ -36,6 +70,10 @@ export function createFakeNet(rpcUrls: Record<number, string>, nowMs: () => numb
         return `0x${wei.toString(16)}`;
       }
       case "eth_call": {
+        const to = String(params[0].to).toLowerCase();
+        const nft = state.nfts.get(chainId)?.get(to);
+        if (nft) return nftCall(nft, params[0].data as string);
+        if (state.nftDown.has(to)) throw new Error("upstream timeout");
         if (state.chainlinkDown) throw new Error("execution reverted");
         const data = params[0].data as string;
         if (data === "0x313ce567") return `0x${word(8n)}`;
@@ -77,6 +115,14 @@ export function createFakeNet(rpcUrls: Record<number, string>, nowMs: () => numb
   return {
     state,
     fetch: fetchFn,
+    /** Creates (or returns) a fake NFT contract on `chainId`. */
+    nft(chainId: number, contract: string, standard: FakeNft["standard"]): FakeNft {
+      const c = contract.toLowerCase();
+      if (!state.nfts.has(chainId)) state.nfts.set(chainId, new Map());
+      const m = state.nfts.get(chainId)!;
+      if (!m.has(c)) m.set(c, { standard, owners: new Map(), balances1155: new Map() });
+      return m.get(c)!;
+    },
     setBalance(wallet: string, chainId: number, wei: bigint) {
       const w = wallet.toLowerCase();
       if (!state.balances.has(w)) state.balances.set(w, new Map());

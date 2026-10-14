@@ -96,12 +96,27 @@ console.log(`      ETH/USD ${el.json?.eligibility?.ethUsdPrice} (${el.json?.elig
 const refused = await call("POST", "/me/registration", { twitterUsername: "@Smoke_Test" }, token);
 check("ineligible wallet cannot register -> 403 INELIGIBLE", refused.status === 403 && refused.json?.error?.code === "INELIGIBLE", refused.json);
 
+// Phase B: deferred integrations are off; nothing reports a verification that didn't happen.
+const ver = await call("GET", "/me/verification", undefined, token);
+check("X verification reports not_configured", ver.status === 200 && ver.json?.x?.status === "not_configured" && ver.json?.x?.required === false, ver.json);
+const xs = await call("POST", "/me/verification/x/start", {}, token);
+check("X start: not_configured, no authorize URL", xs.status === 200 && xs.json?.status === "not_configured" && xs.json?.authorizeUrl === null, xs.json);
+const xc = await call("POST", "/me/verification/x/complete", { state: "s", code: "c" }, token);
+check("X complete refused while not configured", xc.status === 409 && xc.json?.error?.code === "X_NOT_CONFIGURED", xc.json);
+check("non-admin blocked from policy API", (await call("GET", "/admin/policy", undefined, token)).status === 403);
+check("anonymous blocked from access codes", (await call("GET", "/admin/access-codes")).status === 401);
+
 if (!dbUrl) {
   console.log("SKIP  registration path (set SMOKE_DB_URL to the local test DB to run it)");
   console.log(failures ? `\n${failures} FAILED` : "\nALL PASSED");
   process.exit(failures ? 1 : 0);
 }
 const sql = postgres(dbUrl, { max: 1 });
+// The live eligibility check above was written by the Deno function through postgres.js:
+// its jsonb columns must hold real objects/arrays, not JSON-encoded strings.
+const types = await sql`select jsonb_typeof(policy) as p, jsonb_typeof(chains) as c from allowlist.eligibility_checks
+                        where wallet_address_normalized = ${user.address.toLowerCase()}`;
+check("jsonb stored as objects through the production driver", types.length > 0 && types.every((t) => t.p === "object" && t.c === "array"), types);
 await sql`update allowlist.campaigns set eth_balance_check_enabled = false`;
 await sql`delete from allowlist.eligibility_checks where wallet_address_normalized = ${user.address.toLowerCase()}`;
 
@@ -155,6 +170,36 @@ if (adminKey) {
   const fin = await call("GET", "/admin/export.csv?preset=final", undefined, at);
   const finLines = fin.text.trim().split("\r\n").slice(1);
   check("final export: approved only", fin.status === 200 && finLines.length >= 1 && finLines.every((l) => l.includes('"approved"')), fin.text.slice(0, 300));
+
+  // Phase B admin: policy, guards, collections, access codes, usage.
+  const pol = await call("GET", "/admin/policy", undefined, at);
+  check(
+    "policy: open mode, X provider none, integrations off",
+    pol.status === 200 && pol.json.policy.accessMode === "open" && pol.json.policy.xProvider === "none" &&
+      Object.values(pol.json.integrations).every((i: any) => i.activated === false && i.active === false),
+    pol.json?.integrations,
+  );
+  const deferred = await call("PATCH", "/admin/policy", { expectedVersion: pol.json.version, changes: { accessMode: "community" } }, at);
+  check("enabling community gating refused (not activated)", deferred.status === 403 && deferred.json?.error?.code === "INTEGRATION_DISABLED", deferred.json);
+  const paid = await call("PATCH", "/admin/policy", { expectedVersion: pol.json.version, changes: { xProvider: "x_api_v2" } }, at);
+  check("selecting a paid X provider refused (not built)", paid.status === 403 && paid.json?.error?.code === "PROVIDER_NOT_IMPLEMENTED", paid.json);
+  const bump = await call("PATCH", "/admin/policy", { expectedVersion: pol.json.version, changes: { xRetryCooldownSeconds: 301 }, reason: "smoke" }, at);
+  check("policy change creates a new version", bump.status === 200 && bump.json.version === pol.json.version + 1, bump.json);
+  const back = await call("PATCH", "/admin/policy", { expectedVersion: bump.json.version, changes: { xRetryCooldownSeconds: 300 }, reason: "smoke revert" }, at);
+  check("stale version rejected / revert accepted", back.status === 200 && (await call("PATCH", "/admin/policy", { expectedVersion: pol.json.version, changes: { xRetryCooldownSeconds: 5 } }, at)).status === 409);
+  const cols = await call("GET", "/admin/collections", undefined, at);
+  check("no partner collections configured", cols.status === 200 && Array.isArray(cols.json.collections) && cols.json.collections.length === 0, cols.json);
+  const gen = await call("POST", "/admin/access-codes", { count: 1, label: "smoke" }, at);
+  const plain = gen.json?.codes?.[0]?.code as string;
+  check("access code generated (shown once)", gen.status === 201 && /^FLY-/.test(plain ?? ""), gen.json);
+  const codes = await call("GET", "/admin/access-codes", undefined, at);
+  check("access code list never contains the plaintext", codes.status === 200 && !codes.text.includes(plain) && codes.json.gatingActive === false, codes.text.slice(0, 200));
+  const rev = await call("POST", `/admin/access-codes/${gen.json?.codes?.[0]?.id}/revoke`, {}, at);
+  check("access code revoked", rev.status === 200 && rev.json?.code?.state === "revoked", rev.json);
+  const usage = await call("GET", "/admin/usage", undefined, at);
+  check("usage: no paid calls, zero budget", usage.status === 200 && usage.json.x.active === false && usage.json.x.totalBudgetUnits === 0 && usage.json.recent.length === 0, usage.json?.x);
+  const header = csv.text.split(/\r?\n/)[0];
+  check("export has the verification columns", ["verification_status", "x_auth_status", "nft_holder_status", "access_code", "approval_status", "policy_version"].every((c) => header.includes(`"${c}"`) || header.includes(c)), header);
 } else {
   console.log("SKIP  admin checks (set ADMIN_PRIVATE_KEY to a throwaway admin key)");
 }

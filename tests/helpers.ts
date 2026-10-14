@@ -4,11 +4,12 @@ import { openPglite } from "../server/pglite.ts";
 import { createApp } from "../supabase/functions/_shared/app.ts";
 import { loadConfig } from "../supabase/functions/_shared/config.ts";
 import { createSignatureVerifier } from "../supabase/functions/_shared/siwe.ts";
+import type { XVerificationProvider } from "../supabase/functions/_shared/xverify.ts";
 import { createFakeNet } from "./fakeNet.ts";
 
 export const ORIGIN = "https://flywing.test";
 
-export async function setup(opts: { env?: Record<string, string>; dataDir?: string } = {}) {
+export async function setup(opts: { env?: Record<string, string>; dataDir?: string; xProvider?: XVerificationProvider } = {}) {
   const admin = privateKeyToAccount(generatePrivateKey());
   const env: Record<string, string> = {
     ALLOWED_ORIGINS: ORIGIN,
@@ -22,6 +23,7 @@ export async function setup(opts: { env?: Record<string, string>; dataDir?: stri
   const net = createFakeNet(config.eligibilityRpcUrls, () => clock);
   const app = createApp({
     fetch: net.fetch,
+    xProvider: opts.xProvider,
     db,
     config,
     verifySignature: createSignatureVerifier({}, false), // offline only in tests

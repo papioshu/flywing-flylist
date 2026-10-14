@@ -1,15 +1,15 @@
 # Deployment — Supabase (API + DB) and HostGator (static site)
 
-Nothing here has been deployed yet (as of 2026-10-13). You need: the new FLY WING Supabase account, the domain on HostGator, and the
+Nothing here has been deployed yet (as of 2026-10-14). You need: the new FLY WING Supabase account, the domain on HostGator, and the
 admin wallet address(es).
 
 ## 1. Supabase project
 
 1. Sign in to https://supabase.com with the FLY WING Google account and create a project (e.g. `flywing`). Save the
    database password. Note the **project ref** (the `xxxx` in `https://xxxx.supabase.co`).
-2. Apply **both** migrations, in order. Pick one:
+2. Apply **all three** migrations, in order. Pick one:
    - **Dashboard:** SQL Editor → paste `supabase/migrations/20261012000000_allowlist_registration.sql` → Run, then
-     `supabase/migrations/20261013000000_flylist_eligibility.sql` → Run.
+     `20261013000000_flylist_eligibility.sql` → Run, then `20261014000000_flylist_verification.sql` → Run.
    - **CLI:** `npx supabase login` → `npx supabase link --project-ref <ref>` → `npx supabase db push`.
 3. Check that **Settings → API → Exposed schemas** does **not** include `allowlist` (the default is `public, graphql_public`).
 
@@ -38,7 +38,9 @@ Optional:
 | `CHAINLINK_ETH_USD_FEED` | `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419` | Ethereum mainnet ETH/USD (resolves from `eth-usd.data.eth`). |
 | `ELIGIBILITY_CACHE_SECONDS` | 300 | How long an eligible/ineligible result is reused per wallet. |
 | `ELIGIBILITY_CHECKS_PER_WALLET` | 10 | Fresh checks per wallet per 10 minutes. |
-| `PROVIDER_TIMEOUT_MS` | 8000 | Per RPC/price request. |
+| `PROVIDER_TIMEOUT_MS` | 8000 | Per RPC/price request (and per partner-NFT read). |
+| `ENABLED_INTEGRATIONS` | *(empty)* | Deferred integrations explicitly switched on: `x_verification`, `community_gating`, `access_codes`. **Leave empty** until the owner approves one. Unknown names stop the function at startup. Listing one only allows the admin to select it; it still has to be chosen in the policy (and invite/community modes also need the D013 DB lock lifted by a migration). |
+| `ACCESS_CODE_PEPPER` | `IP_HASH_SALT` | Secret mixed into access-code hashes (≥ 16 chars). Set it once and never change it, or existing codes stop working. |
 | `NONCE_TTL_SECONDS` / `SESSION_TTL_SECONDS` / `ADMIN_SESSION_TTL_SECONDS` | 600 / 7200 / 3600 | |
 
 `SUPABASE_DB_URL` is provided to Edge Functions automatically. **Never put the service-role key or DB URL in the site.**
@@ -102,8 +104,11 @@ read), and stops before registering anything. Never point `SMOKE_DB_URL` at prod
 - **Remove a registrant on request:** set status `rejected` with a note, or delete the row (its audit rows cascade).
 - **Approve for the mint list:** set status `approved` in the dashboard. Only `approved` rows go in the
   "Final mint allowlist" export.
-- **Change the balance rule:** `update allowlist.campaigns set min_eth_balance_usd_cents = 5500, eth_balance_chain_ids = '{1,4663}', policy_updated_at = now() where id = 'fwg-genesis';`
-  Turn it off with `eth_balance_check_enabled = false`. Past registrations keep the rules they were checked under.
-- **X / NFT / invite gating:** not built. `access_mode` is locked to `open` by a constraint; `x_follow_required` must
-  stay false until a real X verification provider exists (true without `allow_provisional_registration` blocks all
-  new registrations).
+- **Change any rule** (balance minimum/chains, campaign status/window, X requirements, provisional mode, final-export
+  policy, budgets): admin dashboard → **Campaign policy** tab. Every save is a new policy version with a reason in the
+  history; past checks and registrations keep the version they were evaluated under. **Don't edit the campaign row with
+  SQL**: that bypasses versioning and the safety checks.
+- **Partner collections / access codes:** their own tabs. Neither does anything while the access mode is `open`.
+- **Deferred integrations** (paid X verification, partner-NFT gating, invite codes): off. See
+  `docs/COST ASSESSMENT.md` for what each needs and what could cost money. `access_mode` stays locked to `open` by a
+  DB constraint (D013) until an approved migration lifts it.
