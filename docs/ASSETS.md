@@ -26,6 +26,9 @@ to the separate FLY WING website build.
 | `favicon.png` | Home Button Top Left on white, 180×180 | Favicon |
 | `fonts/chasing-clouds.{woff,ttf}` | ChasingClouds-Regular.ttf (WOFF via fontTools) | Brush display words |
 | `brand/cursor.svg` | cursor.svg, filled `#ffea77` (owner's cursor colour, shared with the website) + thin dark outline, 32px | Page cursor, fine pointers only |
+| `wallets/metamask-fox.svg` | assets-src/wallets/metamask-fox.svg (MetaMask logo pack, `MetaMask-icon-fox.svg`), unchanged | Wallet picker button |
+| `wallets/rabby-symbol.svg` | assets-src/wallets/rabby-symbol.svg (Rabby `logo-master` pack, `symbol.svg`); only the viewBox is tightened to the artwork's bounding box (empty padding removed), paths unchanged | Wallet picker button |
+| `wallets/walletconnect-logomark-blue.svg` | assets-src/wallets/walletconnect-logomark-blue.svg (WalletConnect pack, `WC Logomark Blue.svg`), unchanged | WalletConnect button |
 
 SVGs are served as `<img>`, never inlined.
 
@@ -39,3 +42,10 @@ always with `text-transform: uppercase`. Text with digits or punctuation, such a
 
 The landing graphic is flattened: clouds and wordmark are one layer, so they can't move independently. Layered exports
 from RichFox would be needed for parallax.
+
+## Wallet symbols (owner-supplied brand packs, 2026-10-14)
+
+From `MetaMask-Logo-Pack`, `WalletConnect-Logos`, Rabby's `logo-master` and `coinbase_logos`, only the **symbols** are
+used, as the picker's buttons. The Coinbase pack has only the "coinbase" wordmark, so Coinbase Wallet keeps the
+official mark bundled in `@coinbase/wallet-sdk` (not cropped from the wordmark). All SVGs were checked: paths only,
+no scripts or external references. Other installed wallets use the icon they announce over EIP-6963.

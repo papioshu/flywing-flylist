@@ -122,7 +122,11 @@ try {
   check("grid: Phantom (other EIP-6963 wallet) shown", names.includes("Phantom"));
   check("grid: no duplicate wallets", new Set(names).size === names.length);
   check("grid: no generic Browser Wallet when wallets announce", !names.some((n) => /Browser Wallet/.test(n)));
-  check("grid: installed MetaMask uses its own announced icon", (await d.page.getByRole("button", { name: "MetaMask" }).locator("img").getAttribute("src"))!.includes("f6851b"));
+  check("grid: MetaMask uses the fox symbol from MetaMask's pack", (await d.page.getByRole("button", { name: "MetaMask" }).locator("img").getAttribute("src")) === "/wallets/metamask-fox.svg");
+  check("grid: Rabby uses the rabbit symbol from Rabby's pack", (await d.page.getByRole("button", { name: "Rabby" }).locator("img").getAttribute("src")) === "/wallets/rabby-symbol.svg");
+  check("grid: other installed wallet (Phantom) uses its announced icon", (await d.page.getByRole("button", { name: "Phantom" }).locator("img").getAttribute("src"))!.includes("ab9ff2"));
+  const loaded = await d.page.locator(".wgrid img").evaluateAll((imgs) => imgs.every((i) => (i as HTMLImageElement).complete && (i as HTMLImageElement).naturalWidth > 0));
+  check("grid: every logo loaded", loaded);
   check("grid: Coinbase Wallet uses Coinbase SDK logo", (await d.page.getByRole("button", { name: "Coinbase Wallet" }).locator("img").getAttribute("src"))!.includes("0052FF"));
   await d.page.locator(".pass--wallet").screenshot({ path: `${OUT}/01-desktop-grid.png` });
 

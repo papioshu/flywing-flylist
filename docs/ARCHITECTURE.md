@@ -45,9 +45,10 @@ wallets, a generic "Browser Wallet" only if nothing announces over EIP-6963, Wal
 
 - **No duplicates:** installed wallets are matched to the featured list by rdns; wagmi itself drops an EIP-6963
   announcement whose rdns belongs to a configured connector (Coinbase).
-- **Official logos only:** the icon the installed wallet announces; Coinbase's SDK logo; the WalletConnect mark
-  from `@reown/appkit-ui`; for MetaMask/Rabby when not installed, the WalletConnect registry image (needs the
-  project ID; without it they're name-only tiles). No drawn or approximated logos.
+- **Official logos only:** MetaMask fox, Rabby rabbit and WalletConnect logomark are the symbols from each brand's
+  own logo pack (`web/public/wallets/`, see ASSETS.md), used whether or not the wallet is installed; Coinbase Wallet
+  uses the mark bundled in Coinbase's SDK; any other installed wallet uses the icon it announces over EIP-6963. No
+  drawn or approximated logos.
 - **Not installed:** desktop shows an install link (and "use it on your phone" via WalletConnect); on phones MetaMask
   deep-links into MetaMask's browser and others go through WalletConnect.
 - **Interaction:** no card behind the logo; hover (desktop) and press/tap (touch) give a sharp offset

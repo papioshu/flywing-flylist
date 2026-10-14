@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAccount, useConnect, type Connector } from "wagmi";
 import { isUserRejection } from "../lib/session";
-import { COINBASE_ICON, FEATURED, isMobile, useRegistryIcons, WALLETCONNECT_ICON, type Featured } from "../lib/wallets";
+import { FEATURED, isMobile, WALLETCONNECT_ICON, type Featured } from "../lib/wallets";
 
 // Icon-first wallet picker. Each tile is one wallet: no duplicates (EIP-6963 wallets are matched
 // to the featured list by rdns, and wagmi already drops a 6963 announcement whose rdns belongs to a
@@ -20,7 +20,6 @@ const MAX_EXTRA = 3;
 export function WalletPicker({ onError, label = "Connect wallet" }: { onError: (msg: string | null) => void; label?: string }) {
   const { connectors, connectAsync, isPending, variables } = useConnect();
   const { connector: active, isConnected } = useAccount();
-  const registry = useRegistryIcons();
   const [view, setView] = useState<{ k: "grid" } | { k: "all" } | { k: "get"; featured: Featured; icon?: string }>({ k: "grid" });
 
   const announced = connectors.filter((c) => c.type === "injected" && c.id !== "injected"); // EIP-6963
@@ -31,11 +30,11 @@ export function WalletPicker({ onError, label = "Connect wallet" }: { onError: (
   const featured: Tile[] = FEATURED.map((f) => {
     if (f.key === "coinbase") {
       const c = connectors.find((x) => x.type === "coinbaseWallet");
-      if (c) return { kind: "connector", key: f.key, name: f.name, icon: COINBASE_ICON, connector: c };
+      if (c) return { kind: "connector", key: f.key, name: f.name, icon: f.symbol, connector: c };
     }
     const c = announced.find((x) => matches(x, f.rdns));
-    if (c) return { kind: "connector", key: f.key, name: f.name, icon: c.icon ?? registry[f.key], connector: c };
-    return { kind: "get", key: f.key, name: f.name, icon: registry[f.key], featured: f };
+    if (c) return { kind: "connector", key: f.key, name: f.name, icon: f.symbol, connector: c };
+    return { kind: "get", key: f.key, name: f.name, icon: f.symbol, featured: f };
   });
   const others: Tile[] = announced
     .filter((c) => !FEATURED.some((f) => matches(c, f.rdns)))
