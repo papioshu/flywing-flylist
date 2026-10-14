@@ -1,8 +1,7 @@
 import { createConfig, http } from "wagmi";
 import { arbitrum, base, mainnet, optimism, polygon, robinhood, robinhoodTestnet } from "wagmi/chains";
-import { baseAccount, injected, walletConnect } from "wagmi/connectors";
-
-const wcProjectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID as string | undefined;
+import { coinbaseWallet, injected, walletConnect } from "wagmi/connectors";
+import { WC_PROJECT_ID as wcProjectId } from "./wallets";
 
 // Must match ALLOWED_CHAIN_IDS on the server (defaults are the same list).
 export const chains = [mainnet, base, arbitrum, optimism, polygon, robinhood, robinhoodTestnet] as const;
@@ -19,6 +18,11 @@ export const wagmiConfig = createConfig({
           walletConnect({
             projectId: wcProjectId,
             showQrModal: true,
+            // Reown's QR / all-wallets modal, tinted to the FLY WING palette and stacked above our modal.
+            qrModalOptions: {
+              themeMode: "light",
+              themeVariables: { "--w3m-accent": "#872e2c", "--w3m-z-index": "1000", "--w3m-border-radius-master": "2px" },
+            } as never,
             metadata: {
               name: "FLY WING GENESIS",
               description: "FLY WING GENESIS FLYLIST",
@@ -28,7 +32,9 @@ export const wagmiConfig = createConfig({
           }),
         ]
       : []),
-    baseAccount({ appName: "FLY WING GENESIS" }),
+    // Coinbase's own SDK: the Coinbase Wallet extension if installed, otherwise its QR / mobile app
+    // and smart-wallet sign-in. (Coinbase renamed the Base app back to Coinbase Wallet in Sept 2026.)
+    coinbaseWallet({ appName: "FLY WING GENESIS", appLogoUrl: `${window.location.origin}/favicon.png` }),
   ],
   transports: Object.fromEntries(chains.map((c) => [c.id, http()])) as never,
 });

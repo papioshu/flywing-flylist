@@ -20,29 +20,47 @@ Browser (HostGator static site)                Supabase
 
 ## Landing page (`web/src/components/LandingPage.tsx`)
 
-One focused page, top to bottom. Art direction from RichFox's FLY WING kit; asset sources in [ASSETS.md](ASSETS.md).
+Built to RichFox's landing wireframe (`landing page wireframe.jpg`, owner 2026-10-14): one full-screen screen and
+nothing else. Asset sources in [ASSETS.md](ASSETS.md).
 
-1. **Masthead:** bird mark + FLY WING logo (RichFox SVGs) and a FLYLIST open/closed tag from `GET /campaign`.
-2. **Hero:** RichFox's cloud landing graphic (FLY WING wordmark baked in), full-bleed with `object-fit: cover`, eager
-   and preloaded (AVIF/WebP srcset). Overlaid under the wordmark: GENESIS, "by RichFox", and the **APPLY 4 FLYLIST**
-   button (`FlylistApply`). Overlay positions are in source-art pixels via container-query units
-   (`--px = max(100cqw/1920, 100cqh/1080)`), so they stay locked to the baked wordmark at every crop.
-3. **Manifesto band:** the wireframe's hero copy, verbatim ("Wings are given to those chosen. Head in the clouds. Feet
-   on the ground. Fly sh*t only."), on a diagonal red panel, plus chips 5,555 supply / 25 feathers / 11.4.26 from
-   `web/src/lib/collection.ts` (single definition; `tests/collection.test.ts` checks it against the Nimbus project
-   config).
-4. **How it works:** FLYLIST brush heading and three steps ($55 ETH, sign once, X username).
-5. **Fine print:** what joining means, privacy. Then a black footer.
+- **Art:** RichFox's cloud landing graphic (FLY WING wordmark baked in), `object-fit: cover`, eager and preloaded
+  (AVIF/WebP srcset). On tall portrait screens (aspect < 7/11) the art is sized by width instead, so the wordmark
+  isn't cropped, and its top/bottom fade into the art's edge colours.
+- **FLY LIST pill** (`FlylistApply`): white rounded pill, red condensed slanted lettering, under the wordmark.
+  Positions and sizes are in source-art pixels via container-query units (`--px`), so at 1920×1080 the pill is
+  437×82 at y 735, measured within 1–2px of the wireframe. Accessible name "Apply 4 FLY LIST".
+- **CONNECT WALLET** (`ConnectWallet`), top right. Not in the wireframe; added for the owner's wallet brief.
+  It only connects or switches a wallet and never starts the FLYLIST flow.
+- "Art by RichFox" credit, bottom right. Registration terms and privacy live in the FLYLIST modal's connect step.
 
-No mint UI, gallery or roadmap here; those belong to the separate website build. Nothing on the page calls the
-wallet until APPLY 4 FLYLIST is clicked. Type: Oswald (condensed caps, self-hosted via @fontsource), ChasingClouds
-for uppercase brush display words only (the font has letters only), Zen Kaku Gothic New for body, DM Mono for
-addresses. The modal and admin share the palette tokens at the top of `web/src/styles.css`.
+`web/src/lib/collection.ts` (supply numbers) is no longer shown on the landing page but stays checked against Nimbus by
+`tests/collection.test.ts`.
+
+## Wallets (`web/src/components/WalletPicker.tsx`, `web/src/lib/wallets.ts`, `web/src/lib/wagmi.ts`)
+
+Icon-first grid: each wallet's logo is the button (name as tooltip and accessible name). Connectors: EIP-6963
+discovered wallets (wagmi `injected`), Coinbase Wallet (Coinbase's own SDK), WalletConnect (only when
+`VITE_WALLETCONNECT_PROJECT_ID` is set). Grid order: MetaMask, Coinbase Wallet, Rabby, up to 3 other installed
+wallets, a generic "Browser Wallet" only if nothing announces over EIP-6963, WalletConnect, All Wallets.
+
+- **No duplicates:** installed wallets are matched to the featured list by rdns; wagmi itself drops an EIP-6963
+  announcement whose rdns belongs to a configured connector (Coinbase).
+- **Official logos only:** the icon the installed wallet announces; Coinbase's SDK logo; the WalletConnect mark
+  from `@reown/appkit-ui`; for MetaMask/Rabby when not installed, the WalletConnect registry image (needs the
+  project ID; without it they're name-only tiles). No drawn or approximated logos.
+- **Not installed:** desktop shows an install link (and "use it on your phone" via WalletConnect); on phones MetaMask
+  deep-links into MetaMask's browser and others go through WalletConnect.
+- **Interaction:** no card behind the logo; hover (desktop) and press/tap (touch) give a sharp offset
+  `filter: drop-shadow` plus a 3px lift in 150ms; the shadow holds while that wallet is opening, with a status
+  line; keyboard focus gets an outline; the connected wallet gets a small dot. Reduced motion drops the lift.
+- RainbowKit was not used (needs wagmi 2; this app is on wagmi 3). Reown's headless wallet list is paid-plan only.
+- Tests: `npm run e2e:wallets` (mock EIP-6963 MetaMask/Rabby/Phantom, keyboard, switching, mobile deep link,
+  returning wallet).
 
 ## The FLYLIST interaction (`web/src/components/FlylistApply.tsx`)
 
 The page renders the gate card and nothing else wallet-related. **No wallet dialog, signature request or modal is
-triggered by page load, wagmi's silent reconnect, or `accountsChanged`.** Only the APPLY 4 FLYLIST click starts a flow:
+triggered by page load, wagmi's silent reconnect, or `accountsChanged`.** Connecting through CONNECT WALLET doesn't either. Only the FLY LIST button (APPLY 4 FLYLIST) starts a flow:
 
 1. No wallet connected → modal shows "Wallet connection requested" with the wallet picker.
 2. Connected → **Signature requested**: nonce-bound SIWE (below). A still-valid session token for this wallet in this

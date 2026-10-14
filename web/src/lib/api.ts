@@ -1,6 +1,9 @@
 // Thin client for the FLYLIST (allowlist) Edge Function.
 
-export const API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+// Dev falls back to the local API started by `npm run dev` (server/dev.ts); production builds must set VITE_API_URL.
+export const API_URL = (
+  (import.meta.env.VITE_API_URL as string | undefined) || (import.meta.env.DEV ? "http://localhost:8787/allowlist" : "")
+).replace(/\/$/, "");
 
 export type Campaign = {
   id: string;

@@ -97,7 +97,7 @@ async function walletPage(browser: Browser, keys: `0x${string}`[], opts: Paramet
 const modal = (page: Page) => page.locator(".modal");
 const modalText = (page: Page) => page.locator(".pass--modal").innerText();
 const walletCalls = (page: Page) => page.evaluate(() => (window as any).__walletCalls as string[]);
-const apply = (page: Page) => page.getByRole("button", { name: "APPLY 4 FLYLIST" });
+const apply = (page: Page) => page.getByRole("button", { name: /apply 4 fly list/i });
 
 async function connectAndReachForm(page: Page) {
   await apply(page).click();

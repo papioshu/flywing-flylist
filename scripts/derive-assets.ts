@@ -26,6 +26,15 @@ const mark = readFileSync(`${SRC}/Home Button Top Left.svg`, "utf8");
 writeFileSync(`${OUT}/brand/fly-wing-mark.svg`, mark);
 writeFileSync(`${OUT}/brand/fly-wing-mark-white.svg`, mark.replace(/fill:\s*#872e2c/i, "fill: #ffffff"));
 
+// Cursor: RichFox's feather path in the owner's cursor colour #ffea77 (same file as the website),
+// thin dark outline so it stays visible on the white modal. Explicit 32px size.
+writeFileSync(
+  `${OUT}/brand/cursor.svg`,
+  readFileSync(`${SRC}/cursor.svg`, "utf8")
+    .replace('viewBox="0 0 32 32"', 'width="32" height="32" viewBox="0 0 32 32"')
+    .replace("<path ", '<path fill="#ffea77" stroke="#0d0d0d" stroke-width="0.8" stroke-linejoin="round" '),
+);
+
 // Fonts: ChasingClouds (owner-cleared for web use, D028) is served as the original TTF plus a
 // WOFF made with fontTools:  python -c "from fontTools.ttLib import TTFont; f=TTFont('assets-src/richfox/ChasingClouds-Regular.ttf'); f.flavor='woff'; f.save('web/public/fonts/chasing-clouds.woff')"
 mkdirSync(`${OUT}/fonts`, { recursive: true });

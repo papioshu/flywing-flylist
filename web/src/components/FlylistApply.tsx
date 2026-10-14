@@ -7,7 +7,7 @@ import { FALLBACK_CHAIN_ID, SUPPORTED_CHAIN_IDS } from "../lib/wagmi";
 import { WalletPicker } from "./WalletPicker";
 
 // The FLYLIST flow. Nothing here runs on page load, wallet connect or wallet change:
-// the only entry point is the APPLY 4 FLYLIST button. Order (spec §1):
+// the only entry point is the FLY LIST button ("APPLY 4 FLYLIST" in the spec). Order (spec §1):
 // connect → sign (nonce SIWE) → server verifies → registration lookup → eligibility → form.
 type Step =
   | { k: "connect" }
@@ -191,10 +191,12 @@ export function FlylistApply({ campaign }: { campaign: Campaign | null }) {
 
   return (
     <div className="gate">
+      {/* Visible label is the wireframe's "FLY LIST"; the hidden prefix gives screen readers the action. */}
       <button type="button" className="btn--apply" onClick={start}>
-        {closed ? "Check my status" : "APPLY 4 FLYLIST"}
+        <span className="visually-hidden">{closed ? "Check status: " : "Apply 4 "}</span>
+        <span className="btn--apply__label">FLY LIST</span>
       </button>
-      <p className="gate__fine">{closed ? "Registration is closed." : "Free · No gas · No approvals"}</p>
+      {closed && <p className="gate__fine">Registration is closed. Tap to check your status.</p>}
 
       {/* Portal: keeps the modal out of any transformed/filtered ancestor, which would trap position:fixed. */}
       {open &&
@@ -272,6 +274,7 @@ function StepBody({
               {error}
             </p>
           )}
+          <Terms />
         </>
       );
     case "signature":
@@ -612,5 +615,29 @@ function Registered({
         </div>
       )}
     </div>
+  );
+}
+
+// Registration terms + privacy notice (moved off the landing page, which is art + button only).
+// Shown on the connect step, before any wallet connects or signs.
+function Terms() {
+  return (
+    <details className="terms">
+      <summary>Free · no gas · no approvals. What joining means &amp; privacy</summary>
+      <p>
+        <strong>What joining means.</strong> Applying puts your wallet on the FLYLIST registration list. It does{" "}
+        <strong>not</strong> guarantee a mint spot or an NFT. A wallet must hold at least $55 worth of ETH on Ethereum or
+        Robinhood Chain; we read the balance once and never move, charge or lock it. The team reviews registrations, and
+        approvals and mint details will be announced on FLY WING's official channels. Nobody from FLY WING will ever DM
+        you a mint link or ask for your recovery phrase.
+      </p>
+      <p>
+        <strong>Privacy.</strong> We collect your public wallet address, the X username you type in, the network you
+        signed on, when you registered, and the ETH balance and ETH/USD price we read when you applied, to run the FLY
+        WING GENESIS FLYLIST, review registrations and later build the mint list. Your wallet and X username are linked
+        together and visible only to the FLY WING team. We don't publish the list, sell it, or share it. Your signature is
+        checked once and not stored. To be removed, contact FLY WING on X.
+      </p>
+    </details>
   );
 }

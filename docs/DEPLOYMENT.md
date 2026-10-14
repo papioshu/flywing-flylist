@@ -71,8 +71,13 @@ read), and stops before registering anything. Never point `SMOKE_DB_URL` at prod
 
 ## 4. Build the site
 
-1. (Recommended, for phones without a wallet browser) create a free WalletConnect/Reown project at
-   https://cloud.reown.com and add your domain to its allowed domains.
+1. Create a free WalletConnect/Reown project (no paid plan needed) at https://dashboard.reown.com
+   (formerly cloud.reown.com): New project → type "AppKit" → copy the **Project ID**. Under the project's
+   allowed domains add the production domain (and `http://localhost:5173` for local testing).
+   The wallet picker needs it for: the WalletConnect tile (QR on desktop, deep links into 500+ mobile
+   wallets), the All Wallets list, and the official MetaMask / Rabby logos when those wallets aren't
+   installed (fetched from the WalletConnect registry). Without it the picker still works for installed
+   wallets and Coinbase Wallet, and shows MetaMask / Rabby as name-only tiles.
 2. Create `.env.production`:
 
    ```
@@ -91,10 +96,14 @@ read), and stops before registering anything. Never point `SMOKE_DB_URL` at prod
 
 ## 6. Verify for real
 
-- Open the site on desktop: confirm nothing opens on load or when the wallet connects. Click APPLY 4 FLYLIST with a
-  wallet holding ≥ $55 of ETH on Ethereum or Robinhood Chain, submit, reload, click APPLY again and confirm "Wallet
+- Open the site on desktop: confirm nothing opens on load or when the wallet connects. Click FLY LIST with a
+  wallet holding ≥ $55 of ETH on Ethereum or Robinhood Chain, submit, reload, click FLY LIST again and confirm "Wallet
   already registered". Try a near-empty wallet and confirm "Not eligible yet" with sensible numbers.
-- Open it on a phone, inside the wallet app's browser and via WalletConnect.
+- Wallets (owner brief: test before deploying). Desktop: MetaMask, Rabby and Coinbase Wallet extensions, plus
+  WalletConnect QR from a phone. Phone: MetaMask tile in Safari/Chrome (deep link into MetaMask's browser),
+  WalletConnect into another wallet app, and inside a wallet app's own browser. Switch wallets from CONNECT WALLET
+  and mid-flow, and re-open FLY LIST with a registered wallet ("Wallet already registered"). The automated
+  versions are `npm run e2e:wallets` and `npm run e2e:ui` (mock wallets; they don't replace real devices).
 - `/admin/allowlist`: sign in with an admin wallet, edit a status, Export CSV, and open the file in Excel or Google Sheets.
 - After the first real traffic, check that rate limiting sees real client IPs: in the SQL editor,
   `select bucket, count(distinct key) from allowlist.rate_limits group by 1;` should show many keys, not one.

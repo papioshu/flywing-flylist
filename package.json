@@ -13,10 +13,11 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "pg:server": "tsx scripts/pg-server.ts",
     "smoke": "tsx scripts/smoke.ts",
-    "e2e:ui": "tsx scripts/ui-e2e.ts"
+    "e2e:ui": "tsx scripts/ui-e2e.ts",
+    "e2e:wallets": "tsx scripts/wallet-e2e.ts"
   },
   "dependencies": {
-    "@base-org/account": "^2.5.13",
+    "@coinbase/wallet-sdk": "4.4.0",
     "@fontsource/dm-mono": "^5.3.0",
     "@fontsource/oswald": "^5.3.0",
     "@fontsource/zen-kaku-gothic-new": "^5.3.1",
