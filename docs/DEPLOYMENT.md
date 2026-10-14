@@ -75,9 +75,8 @@ read), and stops before registering anything. Never point `SMOKE_DB_URL` at prod
    (formerly cloud.reown.com): New project → type "AppKit" → copy the **Project ID**. Under the project's
    allowed domains add the production domain (and `http://localhost:5173` for local testing).
    The wallet picker needs it for: the WalletConnect tile (QR on desktop, deep links into 500+ mobile
-   wallets), the All Wallets list, and the official MetaMask / Rabby logos when those wallets aren't
-   installed (fetched from the WalletConnect registry). Without it the picker still works for installed
-   wallets and Coinbase Wallet, and shows MetaMask / Rabby as name-only tiles.
+   wallets) and the All Wallets list. Without it the picker still works for installed wallets, Coinbase
+   Wallet, and the MetaMask phone deep link. (Wallet logos are bundled; none are fetched.)
 2. Create `.env.production`:
 
    ```
