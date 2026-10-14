@@ -1,16 +1,21 @@
 # Deployment — Supabase (API + DB) and HostGator (static site)
 
-Nothing here has been deployed yet (as of 2026-10-14). You need: the new FLY WING Supabase account, the domain on HostGator, and the
-admin wallet address(es).
+Nothing here has been deployed yet (as of 2026-10-14). The Supabase project exists (below). Still needed: the domain
+on HostGator and the admin wallet address(es).
 
 ## 1. Supabase project
 
-1. Sign in to https://supabase.com with the FLY WING Google account and create a project (e.g. `flywing`). Save the
-   database password. Note the **project ref** (the `xxxx` in `https://xxxx.supabase.co`).
+1. **Done 2026-10-14.** The FLY WING Supabase project is `https://dkhblphayvcjvblgjxac.supabase.co`, ref
+   `dkhblphayvcjvblgjxac`, on the FLY WING account (separate from BMBSQD). Its publishable key is
+   `sb_publishable_7YnoZqWgFrSyhJwoW9cTEQ_FirmqQN0`. That key is public by design, but this site doesn't use it,
+   because the browser only talks to the Edge Function. This **one project is shared by the FLYLIST page and the
+   future mint**. Never commit the secret key or the database password. They belong only in Supabase secrets or a
+   git-ignored `.env`. The secret key was exposed in a chat transcript on 2026-10-14, so **rotate it before launch**
+   (Settings → API keys).
 2. Apply **all three** migrations, in order. Pick one:
    - **Dashboard:** SQL Editor → paste `supabase/migrations/20261012000000_allowlist_registration.sql` → Run, then
      `20261013000000_flylist_eligibility.sql` → Run, then `20261014000000_flylist_verification.sql` → Run.
-   - **CLI:** `npx supabase login` → `npx supabase link --project-ref <ref>` → `npx supabase db push`.
+   - **CLI:** `npx supabase login` → `npx supabase link --project-ref dkhblphayvcjvblgjxac` → `npx supabase db push`.
 3. Check that **Settings → API → Exposed schemas** does **not** include `allowlist` (the default is `public, graphql_public`).
 
 > Free-tier projects pause after about a week without traffic, which would take registration offline. For a live
@@ -20,7 +25,7 @@ admin wallet address(es).
 ## 2. Function secrets
 
 ```bash
-npx supabase secrets set --project-ref <ref> \
+npx supabase secrets set --project-ref dkhblphayvcjvblgjxac \
   ALLOWED_ORIGINS="https://<your-domain>,https://www.<your-domain>" \
   ADMIN_WALLETS="0xAdminWallet1,0xAdminWallet2" \
   IP_HASH_SALT="$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")"
@@ -48,7 +53,7 @@ Optional:
 ## 3. Deploy the function
 
 ```bash
-npx supabase functions deploy allowlist --project-ref <ref> --no-verify-jwt --use-api
+npx supabase functions deploy allowlist --project-ref dkhblphayvcjvblgjxac --no-verify-jwt --use-api
 ```
 
 `--no-verify-jwt` is required: the function does its own wallet authentication (also set in `supabase/config.toml`).
@@ -57,8 +62,8 @@ npx supabase functions deploy allowlist --project-ref <ref> --no-verify-jwt --us
 Smoke test (uses throwaway wallets):
 
 ```bash
-curl -H "origin: https://<your-domain>" https://<ref>.supabase.co/functions/v1/allowlist/campaign
-API_URL=https://<ref>.supabase.co/functions/v1/allowlist ORIGIN=https://<your-domain> npm run smoke
+curl -H "origin: https://<your-domain>" https://dkhblphayvcjvblgjxac.supabase.co/functions/v1/allowlist/campaign
+API_URL=https://dkhblphayvcjvblgjxac.supabase.co/functions/v1/allowlist ORIGIN=https://<your-domain> npm run smoke
 ```
 
 Against production, run it **without** `SMOKE_DB_URL`: it then checks auth, replay rejection and a LIVE eligibility
@@ -72,7 +77,7 @@ read), and stops before registering anything. Never point `SMOKE_DB_URL` at prod
 2. Create `.env.production`:
 
    ```
-   VITE_API_URL=https://<ref>.supabase.co/functions/v1/allowlist
+   VITE_API_URL=https://dkhblphayvcjvblgjxac.supabase.co/functions/v1/allowlist
    VITE_WALLETCONNECT_PROJECT_ID=<reown project id>
    ```
 3. `npm run build`. This outputs `dist/`.
