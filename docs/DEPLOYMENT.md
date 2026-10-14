@@ -10,8 +10,7 @@ on HostGator and the admin wallet address(es).
    `sb_publishable_7YnoZqWgFrSyhJwoW9cTEQ_FirmqQN0`. That key is public by design, but this site doesn't use it,
    because the browser only talks to the Edge Function. This **one project is shared by the FLYLIST page and the
    future mint**. Never commit the secret key or the database password. They belong only in Supabase secrets or a
-   git-ignored `.env`. The secret key was exposed in a chat transcript on 2026-10-14, so **rotate it before launch**
-   (Settings → API keys).
+   git-ignored `.env`.
 2. Apply **all three** migrations, in order. Pick one:
    - **Dashboard:** SQL Editor → paste `supabase/migrations/20261012000000_allowlist_registration.sql` → Run, then
      `20261013000000_flylist_eligibility.sql` → Run, then `20261014000000_flylist_verification.sql` → Run.
