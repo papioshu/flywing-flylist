@@ -53,7 +53,7 @@ async function walletPage(browser: Browser, keys: `0x${string}`[], opts: Paramet
         listeners.accountsChanged?.forEach((l) => l([current]));
       };
       (window as any).ethereum = {
-        isMetaMask: false,
+        isMetaMask: true,
         request: async ({ method, params }: { method: string; params?: any[] }) => {
           calls.push(method);
           switch (method) {
@@ -101,7 +101,7 @@ const apply = (page: Page) => page.getByRole("button", { name: /apply 4 fly list
 
 async function connectAndReachForm(page: Page) {
   await apply(page).click();
-  await page.getByRole("button", { name: /Browser Wallet/ }).click();
+  await page.getByRole("button", { name: "MetaMask", exact: true }).click();
   await page.getByLabel("X / Twitter username").waitFor({ timeout: 15_000 });
 }
 
@@ -115,13 +115,13 @@ try {
   await d.page.waitForTimeout(1500); // give any (wrong) auto-open logic time to fire
   await d.page.screenshot({ path: `${OUT}/01-desktop-landing.png`, fullPage: true });
   check("page load: no modal", (await modal(d.page).count()) === 0);
-  check("page load: no wallet picker on the page", (await d.page.getByRole("button", { name: /Browser Wallet/ }).count()) === 0);
+  check("page load: no wallet picker on the page", (await d.page.getByRole("button", { name: "MetaMask", exact: true }).count()) === 0);
   check("page load: no wallet connect/sign requests", !(await walletCalls(d.page)).some((m) => m === "eth_requestAccounts" || m === "personal_sign"));
 
   await apply(d.page).click();
   await d.page.getByText("Wallet connection requested").waitFor();
   check("click: modal asks for a wallet connection", true);
-  await d.page.getByRole("button", { name: /Browser Wallet/ }).click();
+  await d.page.getByRole("button", { name: "MetaMask", exact: true }).click();
   await d.page.getByLabel("X / Twitter username").waitFor({ timeout: 15_000 });
   const walletInput = d.page.getByRole("textbox", { name: "Wallet address" });
   check("form: wallet field shows the verified address", (await walletInput.inputValue()) === `${d.account.address.slice(0, 6)}…${d.account.address.slice(-4)}`);
@@ -172,7 +172,7 @@ try {
   const r = await walletPage(browser, [userKey], { viewport: { width: 1280, height: 900 } });
   await r.page.goto(WEB);
   await apply(r.page).click();
-  await r.page.getByRole("button", { name: /Browser Wallet/ }).click();
+  await r.page.getByRole("button", { name: "MetaMask", exact: true }).click();
   await r.page.getByText("Wallet already registered").waitFor({ timeout: 15_000 });
   await r.page.locator(".pass--modal").screenshot({ path: `${OUT}/04-desktop-already-registered.png` });
   check("other browser: recognized from the database, original handle", (await modalText(r.page)).includes(`@${H2}`));
@@ -184,7 +184,7 @@ try {
   const p = await walletPage(browser, [poorKey], { viewport: { width: 1280, height: 900 } });
   await p.page.goto(WEB);
   await apply(p.page).click();
-  await p.page.getByRole("button", { name: /Browser Wallet/ }).click();
+  await p.page.getByRole("button", { name: "MetaMask", exact: true }).click();
   await p.page.getByText("Not eligible yet").waitFor({ timeout: 15_000 });
   await p.page.locator(".pass--modal").screenshot({ path: `${OUT}/05-desktop-ineligible.png` });
   const ptext = await modalText(p.page);
@@ -196,7 +196,7 @@ try {
   const u = await walletPage(browser, [generatePrivateKey()], { viewport: { width: 1280, height: 900 } });
   await u.page.goto(WEB);
   await apply(u.page).click();
-  await u.page.getByRole("button", { name: /Browser Wallet/ }).click();
+  await u.page.getByRole("button", { name: "MetaMask", exact: true }).click();
   await u.page.getByText("Check unavailable").waitFor({ timeout: 15_000 });
   check("price outage: 'Check unavailable', not ineligible", !(await modalText(u.page)).includes("Not eligible"));
   await fake("/state", { chainlinkDown: false, coinbaseDown: false });
@@ -229,7 +229,7 @@ try {
   check("mobile: no horizontal overflow", !(await m.page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)));
   check("mobile: no modal on load", (await modal(m.page).count()) === 0);
   await apply(m.page).tap();
-  await m.page.getByRole("button", { name: /Browser Wallet/ }).tap();
+  await m.page.getByRole("button", { name: "MetaMask", exact: true }).tap();
   await m.page.getByLabel("X / Twitter username").waitFor({ timeout: 15_000 });
   const [mw, mx] = [await m.page.locator(".flyfields > div").nth(0).boundingBox(), await m.page.locator(".flyfields > div").nth(1).boundingBox()];
   check("mobile: fields stacked", !!mw && !!mx && mx.y > mw.y + mw.height - 1);
@@ -246,7 +246,7 @@ try {
   // ---------- admin: non-admin wallet is refused ----------
   const n = await walletPage(browser, [generatePrivateKey()], { viewport: { width: 1280, height: 900 } });
   await n.page.goto(`${WEB}/admin/allowlist`);
-  await n.page.getByRole("button", { name: /Browser Wallet/ }).click();
+  await n.page.getByRole("button", { name: "MetaMask", exact: true }).click();
   await n.page.getByRole("button", { name: "Sign in" }).click();
   await n.page.getByText("not an allowlist administrator").waitFor({ timeout: 15_000 });
   check("admin page refuses non-admin wallet", true);
@@ -255,7 +255,7 @@ try {
   // ---------- admin dashboard ----------
   const a = await walletPage(browser, [adminKey], { viewport: { width: 1440, height: 1000 } });
   await a.page.goto(`${WEB}/admin/allowlist`);
-  await a.page.getByRole("button", { name: /Browser Wallet/ }).click();
+  await a.page.getByRole("button", { name: "MetaMask", exact: true }).click();
   await a.page.getByRole("button", { name: "Sign in" }).click();
   await a.page.getByText("Total registrations").waitFor({ timeout: 15_000 });
   await a.page.getByText(`@${H2}`).waitFor();
@@ -343,7 +343,7 @@ try {
 
   const am = await walletPage(browser, [adminKey], { ...devices["iPhone 13"] });
   await am.page.goto(`${WEB}/admin/allowlist`);
-  await am.page.getByRole("button", { name: /Browser Wallet/ }).tap();
+  await am.page.getByRole("button", { name: "MetaMask", exact: true }).tap();
   await am.page.getByRole("button", { name: "Sign in" }).tap();
   await am.page.getByText("Total registrations").waitFor({ timeout: 15_000 });
   await am.page.screenshot({ path: `${OUT}/12-admin-mobile.png`, fullPage: true });

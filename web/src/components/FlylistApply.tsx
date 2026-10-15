@@ -214,11 +214,6 @@ export function FlylistApply({ campaign }: { campaign: Campaign | null }) {
               <h2 id="flylist-title" className="pass__title">
                 {TITLES[step.k]}
               </h2>
-              {(step.k === "submitted" || step.k === "already") && (
-                <div className="stamp" aria-hidden>
-                  {step.k === "submitted" ? "BOARDED" : "ON THE LIST"}
-                </div>
-              )}
               <div className="pass__body" aria-live="polite">
                 <StepBody
                   step={step}
@@ -234,6 +229,12 @@ export function FlylistApply({ campaign }: { campaign: Campaign | null }) {
                   }}
                 />
               </div>
+              {/* Bottom of the panel, in the empty space under the details. */}
+              {(step.k === "submitted" || step.k === "already") && (
+                <div className="stamp" aria-hidden>
+                  {step.k === "submitted" ? "BOARDED" : "ON THE LIST"}
+                </div>
+              )}
             </div>
             <aside className="pass__stub" aria-hidden>
               <img src="/brand/fly-wing-mark-white.svg" alt="" width={44} height={51} />
@@ -288,7 +289,11 @@ function StepBody({
     case "verifying":
       return <p className="muted pulse">Verifying your wallet…</p>;
     case "eligibility":
-      return <p className="muted pulse">Checking your ETH balance on Ethereum and Robinhood Chain…</p>;
+      return (
+        <p className="muted pulse">
+          Checking your ETH balance on Ethereum and Robinhood Chain… Fund verification only: nothing is charged or moved.
+        </p>
+      );
     case "ready":
     case "submitting":
       return <ApplyForm step={step} setStep={setStep} address={address} />;
@@ -298,12 +303,18 @@ function StepBody({
     case "ineligible":
       return (
         <div className="done">
+          <p className="eligible-note">
+            <span className="tag tag--ineligible">Not eligible</span> This wallet holds less than{" "}
+            <strong>${step.eligibility.minBalanceUsd}</strong> in ETH.
+          </p>
           <p>
-            FLYLIST applicants need at least <strong>${step.eligibility.minBalanceUsd}</strong> in native ETH on any one of these
-            chains. Balances on different chains aren't added together.
+            Load your wallet with enough ETH for the mint (at least <strong>${step.eligibility.minBalanceUsd}</strong> on Ethereum or
+            Robinhood Chain), then check again. It has to be on one chain: balances on different chains aren't added together.
           </p>
           <BalanceTable eligibility={step.eligibility} />
-          <p className="muted">Nothing was charged. Top up, then apply again.</p>
+          <p className="muted">
+            This is a fund verification only. We only read your balance: nothing was charged, moved or held.
+          </p>
           <div className="form__row">
             <button type="button" className="btn btn--ghost" onClick={restart}>
               Check again
@@ -459,8 +470,10 @@ function ApplyForm({
       noValidate
     >
       <p className="eligible-note">
-        <span className="tag tag--eligible">Eligible</span> ${best?.balanceUsd} in ETH on {best?.chainName}. Ready to submit.
+        <span className="tag tag--eligible">Eligible</span> ${best?.balanceUsd} in ETH on {best?.chainName}, above the $
+        {step.eligibility.minBalanceUsd} minimum. Ready to submit.
       </p>
+      <p className="form__hint">Fund verification only. We only read your balance: nothing was charged, moved or held.</p>
       <div className="flyfields">
         <div>
           <label htmlFor="fl-wallet" className="form__label">

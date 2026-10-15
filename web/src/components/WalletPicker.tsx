@@ -21,13 +21,18 @@ export function WalletPicker({ onError, label = "Connect wallet" }: { onError: (
   const matches = (c: Connector, rdns: string[]) => rdns.includes(c.id) || rdns.includes(String(c.rdns ?? ""));
   const wc = connectors.find((c) => c.type === "walletConnect");
   const mobile = isMobile();
+  // A browser wallet that injects window.ethereum without announcing itself over EIP-6963 (older
+  // extensions, some in-app browsers) still gets its own tile if it identifies as MetaMask or Rabby.
+  const generic = connectors.find((c) => c.id === "injected");
+  const eth = typeof window !== "undefined" ? (window as { ethereum?: { isMetaMask?: boolean; isRabby?: boolean } }).ethereum : undefined;
+  const legacyKey = !announced.length && generic && eth ? (eth.isRabby ? "rabby" : eth.isMetaMask ? "metamask" : null) : null;
 
   const featured: Tile[] = FEATURED.map((f) => {
     if (f.key === "coinbase") {
       const c = connectors.find((x) => x.type === "coinbaseWallet");
       if (c) return { kind: "connector", key: f.key, name: f.name, icon: f.symbol, connector: c };
     }
-    const c = announced.find((x) => matches(x, f.rdns));
+    const c = announced.find((x) => matches(x, f.rdns)) ?? (legacyKey === f.key ? generic : undefined);
     if (c) return { kind: "connector", key: f.key, name: f.name, icon: f.symbol, connector: c };
     return { kind: "get", key: f.key, name: f.name, icon: f.symbol, featured: f };
   });

@@ -430,13 +430,12 @@ a {
 }
 
 .stamp {
-  position: absolute;
-  right: 22px;
-  top: 64px;
+  align-self: flex-end;
+  margin: auto 8px 4px 0; /* auto top margin pushes it to the bottom of the panel */
   font-family: var(--display);
   font-weight: 700;
   font-style: italic;
-  font-size: 22px;
+  font-size: 34px;
   letter-spacing: 0.06em;
   color: var(--red-bright);
   border: 4px solid var(--red-bright);
@@ -488,12 +487,13 @@ a {
 }
 
 .pass--modal .pass__main {
+  display: flex;
+  flex-direction: column;
   clip-path: polygon(0 0, 100% 0, 100% 100%, 26px 100%, 0 calc(100% - 26px));
 }
 
 .pass--modal .pass__title {
   margin: 18px 0 12px;
-  padding-right: 150px; /* room for the stamp */
 }
 
 .pass__head .modal__close {
@@ -987,7 +987,6 @@ a {
     padding: 10px 18px;
   }
   .pass--modal .pass__title {
-    padding-right: 0;
     font-size: 28px;
   }
   .pass__fields {
@@ -997,13 +996,9 @@ a {
     grid-column: 1 / -1;
   }
   .stamp {
-    /* sits in the empty space beside the Status field */
-    top: 150px;
-    right: 16px;
-    font-size: 16px;
-  }
-  .pass--modal .stamp {
-    top: 58px;
+    align-self: center;
+    margin: 22px 0 6px;
+    font-size: 26px;
   }
 }
 

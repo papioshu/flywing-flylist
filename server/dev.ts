@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import { createApp } from "../supabase/functions/_shared/app.ts";
 import { loadConfig } from "../supabase/functions/_shared/config.ts";
 import { createSignatureVerifier } from "../supabase/functions/_shared/siwe.ts";
+import { parseEther } from "viem";
 import { createFakeNet } from "../tests/fakeNet.ts";
 import { openPglite } from "./pglite.ts";
 
@@ -22,6 +23,9 @@ const db = await openPglite(process.env.PGLITE_DIR ?? ".data/pglite");
 // network instead of live RPCs, controlled via http://localhost:FAKE_CHAIN_PORT. Every wallet
 // holds 1 ETH on Ethereum unless set otherwise. The Edge Function never loads this.
 const fake = process.env.DEV_FAKE_CHAIN === "1" ? createFakeNet(config.eligibilityRpcUrls, () => Date.now()) : null;
+// DEV_FAKE_ETH=0.01 (with DEV_FAKE_CHAIN=1): every wallet holds that much ETH on Ethereum instead
+// of 1 ETH, e.g. to preview the "not eligible" screen ($25 at the fake $2,500/ETH).
+if (fake && process.env.DEV_FAKE_ETH) fake.state.defaultWei = { 1: parseEther(process.env.DEV_FAKE_ETH) };
 const handle = createApp({ db, config, verifySignature: createSignatureVerifier(config.rpcUrls), fetch: fake?.fetch });
 
 if (fake) {
