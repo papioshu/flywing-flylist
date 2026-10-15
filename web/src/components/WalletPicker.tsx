@@ -3,24 +3,19 @@ import { useAccount, useConnect, type Connector } from "wagmi";
 import { isUserRejection } from "../lib/session";
 import { FEATURED, isMobile, WALLETCONNECT_ICON, type Featured } from "../lib/wallets";
 
-// Icon-first wallet picker. Each tile is one wallet: no duplicates (EIP-6963 wallets are matched
-// to the featured list by rdns, and wagmi already drops a 6963 announcement whose rdns belongs to a
-// configured connector, e.g. Coinbase). Picking a wallet only connects it; whatever opened the
-// picker decides what happens next.
+// Icon-first wallet picker: exactly the three featured wallets plus WalletConnect (owner call; no
+// "All Wallets", no extra installed wallets). EIP-6963 wallets are matched to the featured list by
+// rdns. Picking a wallet only connects it; whatever opened the picker decides what happens next.
 
 type Tile =
   | { kind: "connector"; key: string; name: string; icon?: string; connector: Connector }
   | { kind: "get"; key: string; name: string; icon?: string; featured: Featured }
-  | { kind: "walletconnect"; key: string; name: string; icon: string; connector: Connector }
-  | { kind: "all"; key: string; name: string; icons: string[] };
-
-/** How many installed-but-not-featured wallets show before the rest move under All Wallets. */
-const MAX_EXTRA = 3;
+  | { kind: "walletconnect"; key: string; name: string; icon: string; connector: Connector };
 
 export function WalletPicker({ onError, label = "Connect wallet" }: { onError: (msg: string | null) => void; label?: string }) {
   const { connectors, connectAsync, isPending, variables } = useConnect();
   const { connector: active, isConnected } = useAccount();
-  const [view, setView] = useState<{ k: "grid" } | { k: "all" } | { k: "get"; featured: Featured; icon?: string }>({ k: "grid" });
+  const [view, setView] = useState<{ k: "grid" } | { k: "get"; featured: Featured; icon?: string }>({ k: "grid" });
 
   const announced = connectors.filter((c) => c.type === "injected" && c.id !== "injected"); // EIP-6963
   const matches = (c: Connector, rdns: string[]) => rdns.includes(c.id) || rdns.includes(String(c.rdns ?? ""));
@@ -36,27 +31,8 @@ export function WalletPicker({ onError, label = "Connect wallet" }: { onError: (
     if (c) return { kind: "connector", key: f.key, name: f.name, icon: f.symbol, connector: c };
     return { kind: "get", key: f.key, name: f.name, icon: f.symbol, featured: f };
   });
-  const others: Tile[] = announced
-    .filter((c) => !FEATURED.some((f) => matches(c, f.rdns)))
-    .map((c) => ({ kind: "connector", key: c.id, name: c.name, icon: c.icon, connector: c }));
-  // A browser wallet that doesn't announce itself over EIP-6963 (older extensions, some in-app browsers).
-  const generic = connectors.find((c) => c.id === "injected");
-  const legacy: Tile[] =
-    !announced.length && generic && typeof window !== "undefined" && "ethereum" in window
-      ? [{ kind: "connector", key: "injected", name: "Browser Wallet", connector: generic }]
-      : [];
   const wcTile: Tile[] = wc ? [{ kind: "walletconnect", key: "walletconnect", name: "WalletConnect", icon: WALLETCONNECT_ICON, connector: wc }] : [];
-
-  const wallets = [...featured, ...others, ...legacy];
-  const overflow = others.length > MAX_EXTRA;
-  const allIcons = wallets.flatMap((t) => ("icon" in t && t.icon ? [t.icon] : [])).slice(0, 4);
-  const grid: Tile[] = [
-    ...featured,
-    ...others.slice(0, MAX_EXTRA),
-    ...legacy,
-    ...wcTile,
-    ...(overflow || wc ? [{ kind: "all" as const, key: "all", name: "All Wallets", icons: allIcons }] : []),
-  ];
+  const grid: Tile[] = [...featured, ...wcTile];
 
   async function connect(c: Connector) {
     onError(null);
@@ -69,7 +45,6 @@ export function WalletPicker({ onError, label = "Connect wallet" }: { onError: (
 
   function pick(t: Tile) {
     if (t.kind === "connector" || t.kind === "walletconnect") return connect(t.connector);
-    if (t.kind === "all") return setView({ k: "all" });
     // A featured wallet that isn't installed in this browser.
     const f = t.featured;
     if (mobile && f.mobileBrowser) return void (window.location.href = f.mobileBrowser(new URL(window.location.href)));
@@ -78,7 +53,7 @@ export function WalletPicker({ onError, label = "Connect wallet" }: { onError: (
   }
 
   const pendingId = isPending ? (variables?.connector as { id?: string } | undefined)?.id : undefined;
-  const pendingName = pendingId ? [...wallets, ...wcTile].find((t) => "connector" in t && t.connector.id === pendingId)?.name : undefined;
+  const pendingName = pendingId ? grid.find((t) => "connector" in t && t.connector.id === pendingId)?.name : undefined;
 
   function render(t: Tile) {
     const connector = t.kind === "connector" || t.kind === "walletconnect" ? t.connector : null;
@@ -96,13 +71,7 @@ export function WalletPicker({ onError, label = "Connect wallet" }: { onError: (
           disabled={isPending && !pending}
           onClick={() => pick(t)}
         >
-          {t.kind === "all" ? (
-            <span className="wtile__stack" aria-hidden>
-              {t.icons.map((src, i) => (
-                <img key={i} src={src} alt="" width={22} height={22} />
-              ))}
-            </span>
-          ) : t.icon ? (
+          {t.icon ? (
             <img className="wtile__icon" src={t.icon} alt="" width={52} height={52} />
           ) : (
             <span className="wtile__word" aria-hidden>
@@ -146,30 +115,14 @@ export function WalletPicker({ onError, label = "Connect wallet" }: { onError: (
 
   return (
     <div className="picker">
-      <p className="picker__label">{view.k === "all" ? "All wallets" : label}</p>
+      <p className="picker__label">{label}</p>
       <ul className="wgrid" role="list">
-        {(view.k === "all" ? [...wallets, ...wcTile] : grid).map(render)}
+        {grid.map(render)}
       </ul>
       <p className="picker__status" aria-live="polite">
         {pendingName ? `Opening ${pendingName}… approve the connection in your wallet.` : ""}
       </p>
-      {view.k === "all" ? (
-        <p className="picker__hint">
-          {wc && (
-            <>
-              <button type="button" className="link" onClick={() => connect(wc)}>
-                Browse 500+ mobile wallets (WalletConnect)
-              </button>
-              {" · "}
-            </>
-          )}
-          <button type="button" className="link" onClick={() => setView({ k: "grid" })}>
-            ← Back
-          </button>
-        </p>
-      ) : (
-        <p className="picker__hint picker__hint--quiet">Connecting is free. It doesn't sign or send anything.</p>
-      )}
+      <p className="picker__hint picker__hint--quiet">Connecting is free. It doesn't sign or send anything.</p>
     </div>
   );
 }

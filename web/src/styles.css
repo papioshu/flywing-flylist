@@ -621,7 +621,6 @@ a {
 /* The logo is the button: no card behind it. The hover/press effect is a sharp, offset
    drop-shadow that follows the logo's own shape (manga panel shadow), plus a small lift. */
 .wtile__icon,
-.wtile__stack,
 .wtile__word {
   transition: transform 150ms ease-out, filter 150ms ease-out;
 }
@@ -645,32 +644,22 @@ a {
   color: var(--ink);
 }
 
-.wtile__stack {
-  display: grid;
-  grid-template-columns: repeat(2, 22px);
-  gap: 4px;
-}
-
-.wtile__stack img {
-  border-radius: 6px;
-}
-
 @media (hover: hover) {
-  .wtile:hover:not(:disabled) :is(.wtile__icon, .wtile__stack, .wtile__word) {
+  .wtile:hover:not(:disabled) :is(.wtile__icon, .wtile__word) {
     transform: translate(-2px, -3px);
     filter: drop-shadow(4px 4px 0 var(--black));
   }
 }
 
 /* Touch (and click): same shadow on press; it stays while that wallet is opening. */
-.wtile:active:not(:disabled) :is(.wtile__icon, .wtile__stack, .wtile__word),
-.wtile--pending :is(.wtile__icon, .wtile__stack, .wtile__word) {
+.wtile:active:not(:disabled) :is(.wtile__icon, .wtile__word),
+.wtile--pending :is(.wtile__icon, .wtile__word) {
   transform: translate(-2px, -3px);
   filter: drop-shadow(4px 4px 0 var(--red));
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .wtile :is(.wtile__icon, .wtile__stack, .wtile__word) {
+  .wtile :is(.wtile__icon, .wtile__word) {
     transition: none;
     transform: none !important;
   }
