@@ -459,7 +459,6 @@ function ApplyForm({
     }
   }
 
-  const best = step.eligibility.chains.find((c) => c.passed);
   return (
     <form
       className="form"
@@ -470,8 +469,7 @@ function ApplyForm({
       noValidate
     >
       <p className="eligible-note">
-        <span className="tag tag--eligible">Eligible</span> ${best?.balanceUsd} in ETH on {best?.chainName}, above the $
-        {step.eligibility.minBalanceUsd} minimum. Ready to submit.
+        <span className="tag tag--eligible">Eligible</span> Wallet verified. Ready to submit.
       </p>
       <p className="form__hint">Fund verification only. We only read your balance: nothing was charged, moved or held.</p>
       <div className="flyfields">
