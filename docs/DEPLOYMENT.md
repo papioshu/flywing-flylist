@@ -1,7 +1,8 @@
 # Deployment — Supabase (API + DB) and HostGator (static site)
 
-Nothing here has been deployed yet (as of 2026-10-14). The Supabase project exists (below). Still needed: the domain
-on HostGator and the admin wallet address(es).
+Nothing here has been deployed yet (as of 2026-10-15). The Supabase project exists (below). Domain:
+**chasingclouds.xyz** (DNS on Cloudflare, site files on HostGator, API on Supabase). Still needed: the admin wallet
+address(es).
 
 ## 1. Supabase project
 
@@ -25,7 +26,7 @@ on HostGator and the admin wallet address(es).
 
 ```bash
 npx supabase secrets set --project-ref dkhblphayvcjvblgjxac \
-  ALLOWED_ORIGINS="https://<your-domain>,https://www.<your-domain>" \
+  ALLOWED_ORIGINS="https://chasingclouds.xyz,https://www.chasingclouds.xyz" \
   ADMIN_WALLETS="0xAdminWallet1,0xAdminWallet2" \
   IP_HASH_SALT="$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")"
 ```
@@ -61,8 +62,8 @@ npx supabase functions deploy allowlist --project-ref dkhblphayvcjvblgjxac --no-
 Smoke test (uses throwaway wallets):
 
 ```bash
-curl -H "origin: https://<your-domain>" https://dkhblphayvcjvblgjxac.supabase.co/functions/v1/allowlist/campaign
-API_URL=https://dkhblphayvcjvblgjxac.supabase.co/functions/v1/allowlist ORIGIN=https://<your-domain> npm run smoke
+curl -H "origin: https://chasingclouds.xyz" https://dkhblphayvcjvblgjxac.supabase.co/functions/v1/allowlist/campaign
+API_URL=https://dkhblphayvcjvblgjxac.supabase.co/functions/v1/allowlist ORIGIN=https://chasingclouds.xyz npm run smoke
 ```
 
 Against production, run it **without** `SMOKE_DB_URL`: it then checks auth, replay rejection and a LIVE eligibility
@@ -85,7 +86,19 @@ read), and stops before registering anything. Never point `SMOKE_DB_URL` at prod
    ```
 3. `npm run build`. This outputs `dist/`.
 
-## 5. Upload to HostGator
+## 5. Domain: Cloudflare DNS in front of HostGator
+
+1. Cloudflare: add `chasingclouds.xyz`, set Cloudflare's two nameservers at the registrar, wait for **Active**.
+2. HostGator cPanel: add the domain (Addon Domain if the account already has a primary one); note its document root
+   and the **Shared IP Address**.
+3. Cloudflare DNS: `A @ -> <HostGator IP>` and `CNAME www -> chasingclouds.xyz`, both **DNS only (grey)** at first.
+   (HostGator email only: add its MX/mail records, grey.)
+4. cPanel → SSL/TLS Status → run AutoSSL until the domain and `www` have certificates. Then Cloudflare **SSL/TLS =
+   Full (strict)**, then switch both records to **Proxied (orange)**. Never "Flexible": the `.htaccess` HTTPS redirect
+   would loop. Turn **Rocket Loader off**.
+5. The API is on Supabase, not behind Cloudflare, so the proxy doesn't affect the API's client-IP rate limiting.
+
+## 6. Upload to HostGator
 
 1. cPanel → **SSL/TLS Status** → make sure AutoSSL has issued a certificate for the domain (and `www`).
 2. cPanel → File Manager → `public_html/` (or the domain's document root). Turn on **Settings → Show Hidden Files**.
@@ -93,7 +106,7 @@ read), and stops before registering anything. Never point `SMOKE_DB_URL` at prod
    `/admin/allowlist` to the app.
 4. Once HTTPS works, uncomment the `Strict-Transport-Security` line in `.htaccess`.
 
-## 6. Verify for real
+## 7. Verify for real
 
 - Open the site on desktop: confirm nothing opens on load or when the wallet connects. Click FLY LIST with a
   wallet holding ≥ $55 of ETH on Ethereum or Robinhood Chain, submit, reload, click FLY LIST again and confirm "Wallet
