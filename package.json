@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "pg:server": "tsx scripts/pg-server.ts",
     "smoke": "tsx scripts/smoke.ts",
+    "export": "tsx scripts/export-csv.ts",
     "e2e:ui": "tsx scripts/ui-e2e.ts",
     "e2e:wallets": "tsx scripts/wallet-e2e.ts"
   },
