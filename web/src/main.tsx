@@ -16,6 +16,9 @@ import { LandingPage } from "./components/LandingPage";
 import { wagmiConfig } from "./lib/wagmi";
 
 const queryClient = new QueryClient();
+// Two routes, no router. "/" is the FLYLIST landing page, which is the public front door of chasingclouds.xyz
+// until the launch switch moves the domain to the full website (docs/DEPLOYMENT.md § 8). "/admin/allowlist" is
+// the admin dashboard; the admin API itself is protected by wallet sign-in, so this check only picks the screen.
 const isAdmin = window.location.pathname.replace(/\/+$/, "") === "/admin/allowlist";
 
 createRoot(document.getElementById("root")!).render(

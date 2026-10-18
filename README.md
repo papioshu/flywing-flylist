@@ -4,7 +4,8 @@ Landing page + self-service **FLYLIST** (allowlist) registration for FLY WING GE
 
 This repo is **only** the public FLYLIST landing page and its registration backend. The full FLY WING website
 (RichFox's wireframe: story, gallery, Genesis Commitments, SQUAD, Phase 2) is a separate build in its own repo and is
-not front-facing yet. The landing page is skinned with RichFox's art (cloud landing graphic, FLY WING logo + bird mark,
+not front-facing yet: it stays hidden until the owner flips the **launch switch**, a hosting change described in
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) § 8. Until then this FLYLIST page is the front door of chasingclouds.xyz. The landing page is skinned with RichFox's art (cloud landing graphic, FLY WING logo + bird mark,
 ChasingClouds brush type, red / black / white): see [docs/ASSETS.md](docs/ASSETS.md).
 
 Nothing happens on page load or when a wallet connects. The only entry point is **APPLY 4 FLYLIST**:
@@ -29,7 +30,7 @@ active; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) § Campaign policy and
 
 | Part | Where | Runs on |
 |---|---|---|
-| Static site (Vite + React + wagmi/viem) | `web/` → `dist/` | HostGator (any static host) |
+| Static site (Vite + React + wagmi/viem) | `web/` → `dist/` | Cloudflare Pages (any static host works) |
 | API (one Edge Function) | `supabase/functions/allowlist/` + `_shared/` | Supabase Edge Functions (Deno) |
 | Database (private `allowlist` schema) | `supabase/migrations/` | Supabase Postgres |
 

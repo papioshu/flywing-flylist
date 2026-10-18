@@ -20,7 +20,7 @@ Re-check before approving anything; vendor pricing and free-tier limits change.
 | Partner-NFT ownership checks (when enabled) | Standard `eth_call` reads (`balanceOf` / `ownerOf` / ERC-1155 `balanceOf`) on the same RPCs. No NFT indexer. Verified live: `scripts/live-nft.ts` | None (rate-limited) |
 | Access codes (when enabled) | Generated, hashed and redeemed in the database | None |
 | Self-reported X username | Stored, marked `unverified (self-reported)` | None |
-| Static site hosting | HostGator plan the owner is buying | Existing hosting |
+| Static site hosting | Cloudflare Pages (free plan; HostGator dropped 2026-10-15) | None |
 
 ## 2. What requires external API access
 
@@ -60,7 +60,7 @@ checks are plain contract reads. An indexer would only become necessary for feat
    community gating is on. Caching and per-wallet/IP caps keep repeats down. Public RPCs cost nothing but may
    rate-limit under a launch spike, which shows up as `unavailable` (never `ineligible`); a provider free tier is the
    first step (limits **unconfirmed**).
-4. Hosting (HostGator) and the domain are fixed costs the owner already planned.
+4. Hosting is Cloudflare Pages on the free plan. The domain is a fixed cost the owner already planned.
 
 ## 5. What remains disabled pending approval
 

@@ -3,7 +3,7 @@
 ## Components
 
 ```
-Browser (HostGator static site)                Supabase
+Browser (Cloudflare Pages site)                Supabase
 ┌──────────────────────────────┐   HTTPS   ┌─────────────────────────────┐   SQL   ┌────────────────────┐
 │ Vite + React + wagmi/viem    │ ────────▶ │ Edge Function "allowlist"   │ ──────▶ │ Postgres, private  │
 │ "/" APPLY 4 FLYLIST modal    │  Bearer   │ (Deno) _shared/app.ts       │ postgres│ schema "allowlist" │

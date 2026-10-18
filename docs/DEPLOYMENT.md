@@ -1,8 +1,13 @@
-# Deployment — Supabase (API + DB) and HostGator (static site)
+# Deployment — Supabase (API + DB) and Cloudflare Pages (static site)
 
-Nothing here has been deployed yet (as of 2026-10-15). The Supabase project exists (below). Domain:
-**chasingclouds.xyz** (DNS on Cloudflare, site files on HostGator, API on Supabase). Still needed: the admin wallet
-address(es).
+**State as of 2026-10-18:**
+- **API + DB: live.** Supabase project `dkhblphayvcjvblgjxac`. Migrations, secrets and function were deployed
+  2026-10-15 (sections 1–3), and the production smoke test passed.
+- **Site: Cloudflare Pages**, building from the public GitHub repo `papioshu/flywing-flylist` (branch `master`), for
+  **chasingclouds.xyz** (Mint Site D044/D045). HostGator was dropped as the host on 2026-10-15. Sections 5b and 6 are
+  kept only as a fallback.
+- **Front door:** this FLYLIST page is what the domain serves for now. The full FLY WING website (`../website`) stays
+  hidden until the owner flips the launch switch (section 8).
 
 ## 1. Supabase project
 
@@ -75,18 +80,41 @@ read), and stops before registering anything. Never point `SMOKE_DB_URL` at prod
 1. Create a free WalletConnect/Reown project (no paid plan needed) at https://dashboard.reown.com
    (formerly cloud.reown.com): New project → type "AppKit" → copy the **Project ID**. Under the project's
    allowed domains add the production domain (and `http://localhost:5173` for local testing).
-   The wallet picker needs it for: the WalletConnect tile (QR on desktop, deep links into 500+ mobile
-   wallets) and the All Wallets list. Without it the picker still works for installed wallets, Coinbase
-   Wallet, and the MetaMask phone deep link. (Wallet logos are bundled; none are fetched.)
-2. Create `.env.production`:
+   The wallet picker needs it for the WalletConnect tile (QR on desktop, deep links into mobile wallets).
+   The picker is exactly MetaMask, Coinbase Wallet, Rabby and WalletConnect (D042); there is no All Wallets list.
+   Without the ID the other three tiles still work. (Wallet logos are bundled; none are fetched.)
+2. `.env.production` is **tracked in git** (D045). It holds only the two public values, so the Cloudflare build picks
+   them up without any dashboard variables:
 
    ```
    VITE_API_URL=https://dkhblphayvcjvblgjxac.supabase.co/functions/v1/allowlist
    VITE_WALLETCONNECT_PROJECT_ID=<reown project id>
    ```
+   Never put a secret in a `VITE_` variable: everything in one ships in the browser bundle.
 3. `npm run build`. This outputs `dist/`.
+4. **Lockfile:** Cloudflare runs `npm ci` with npm 10 (Node 22, from `.nvmrc`). Whenever dependencies change,
+   regenerate the lockfile with `npx npm@10 install` so npm 10 accepts it (the fix was `25f79f1`).
 
-## 5. Domain: Cloudflare DNS in front of HostGator
+## 5. Cloudflare Pages (current host)
+
+1. Workers & Pages → Create → Pages → Connect to Git → `papioshu/flywing-flylist`, production branch `master`.
+2. Build settings:
+   - framework **None** (or Vite);
+   - build command `npm run build`;
+   - output directory `dist`;
+   - root `/`.
+
+   Node comes from `.nvmrc` (22).
+3. Every push to `master` builds and deploys. **Retry deployment** rebuilds the **same** commit, so to pick up a fix,
+   push a new commit or use **Create deployment**.
+4. Custom domains: add `chasingclouds.xyz` and `www.chasingclouds.xyz`. DNS is already on Cloudflare, so the records
+   are created automatically.
+5. Response headers come from `web/public/_headers`; `.htaccess` is ignored on Pages. Unknown paths, such as
+   `/admin/allowlist`, fall back to `index.html` because there is no `404.html`.
+6. The API only answers origins listed in `ALLOWED_ORIGINS`. The `*.pages.dev` preview URL is **not** listed, so the
+   page loads there but its API calls get 403. Test on the real domain, or temporarily add the preview origin.
+
+## 5b. (Fallback only) Domain: Cloudflare DNS in front of HostGator
 
 1. Cloudflare: add `chasingclouds.xyz`, set Cloudflare's two nameservers at the registrar, wait for **Active**.
 2. HostGator cPanel: add the domain (Addon Domain if the account already has a primary one); note its document root
@@ -98,7 +126,7 @@ read), and stops before registering anything. Never point `SMOKE_DB_URL` at prod
    would loop. Turn **Rocket Loader off**.
 5. The API is on Supabase, not behind Cloudflare, so the proxy doesn't affect the API's client-IP rate limiting.
 
-## 6. Upload to HostGator
+## 6. (Fallback only) Upload to HostGator
 
 1. cPanel → **SSL/TLS Status** → make sure AutoSSL has issued a certificate for the domain (and `www`).
 2. cPanel → File Manager → `public_html/` (or the domain's document root). Turn on **Settings → Show Hidden Files**.
@@ -137,3 +165,30 @@ read), and stops before registering anything. Never point `SMOKE_DB_URL` at prod
 - **Deferred integrations** (paid X verification, partner-NFT gating, invite codes): off. See
   `docs/COST ASSESSMENT.md` for what each needs and what could cost money. `access_mode` stays locked to `open` by a
   DB constraint (D013) until an approved migration lifts it.
+
+## 8. Launch switch: FLYLIST → full website (planned, not built; owner decides when)
+
+Today **chasingclouds.xyz serves this FLYLIST page**. The full site (`C:\Projectwork\FlyWingGenesis\website`: story,
+gallery, Genesis Commitments, SQUAD, Phase II roadmap, mint status) is built through Stage 2 but **hidden**: it has no
+remote, no Pages project, and `noindex`. There is no in-code flag. The switch is a hosting change, so this app, its
+API and the registrations already in the database are untouched. Proposal: Website DECISIONS D009. Confirm with the
+owner before doing any step.
+
+1. Push `website` to its own GitHub repo, create a second Pages project for it, and review it on its `*.pages.dev`
+   URL.
+2. Give FLYLIST its own address, e.g. `flylist.chasingclouds.xyz`:
+   - Add it as a custom domain on **this** Pages project.
+   - Append its origin to `ALLOWED_ORIGINS`, keeping the old origins during the change. Sign-in checks the SIWE domain
+     against this list (`_shared/siwe.ts`), so a missing origin breaks sign-in.
+   - Add it to the Reown project's allowed domains.
+3. In the website build:
+   - set `VITE_FLYLIST_URL=https://flylist.chasingclouds.xyz/`;
+   - remove `<meta name="robots" content="noindex">` from `index.html`.
+4. Move the `chasingclouds.xyz` and `www` custom domains from this Pages project to the website project.
+5. Run the live checks again:
+   - the website loads;
+   - APPLY 4 FLYLIST opens this page;
+   - register and already-registered both work;
+   - `/admin/allowlist` works;
+   - `npm run export` works with `ORIGIN=<new FLYLIST origin>`.
+6. Registrations are keyed by wallet in Supabase, so nothing moves or is lost. To roll back, move the domains back.
