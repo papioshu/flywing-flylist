@@ -56,7 +56,10 @@ wallets, a generic "Browser Wallet" only if nothing announces over EIP-6963, Wal
   line; keyboard focus gets an outline; the connected wallet gets a small dot. Reduced motion drops the lift.
 - RainbowKit was not used (needs wagmi 2; this app is on wagmi 3). Reown's headless wallet list is paid-plan only.
 - Tests: `npm run e2e:wallets` (mock EIP-6963 MetaMask/Rabby/Phantom, keyboard, switching, mobile deep link,
-  returning wallet).
+  returning wallet). `npm run e2e:mobile` runs the whole flow on iPhones (WebKit: SE 320px, 13, 15 Pro Max,
+  landscape) and Android phones (Chromium: Galaxy S9+ 360px, Pixel 7, Galaxy S24, landscape). On every screen it
+  checks for sideways scroll, centring, content clipped at the panel edge, tap targets of at least 44px, and input
+  text of at least 16px, so iOS doesn't zoom.
 
 ## The FLYLIST interaction (`web/src/components/FlylistApply.tsx`)
 

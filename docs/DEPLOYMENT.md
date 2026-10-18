@@ -143,7 +143,8 @@ read), and stops before registering anything. Never point `SMOKE_DB_URL` at prod
   WalletConnect QR from a phone. Phone: MetaMask tile in Safari/Chrome (deep link into MetaMask's browser),
   WalletConnect into another wallet app, and inside a wallet app's own browser. Switch accounts/wallets
   mid-flow, and re-open FLY LIST with a registered wallet ("Wallet already registered"). The automated
-  versions are `npm run e2e:wallets` and `npm run e2e:ui` (mock wallets; they don't replace real devices).
+  versions are `npm run e2e:wallets`, `npm run e2e:ui` and `npm run e2e:mobile` (iPhone/WebKit + Android/Chromium
+  layouts). They use mock wallets and emulated phones, so they don't replace real devices.
 - `/admin/allowlist`: sign in with an admin wallet, edit a status, Export CSV, and open the file in Excel or Google Sheets.
 - After the first real traffic, check that rate limiting sees real client IPs: in the SQL editor,
   `select bucket, count(distinct key) from allowlist.rate_limits group by 1;` should show many keys, not one.

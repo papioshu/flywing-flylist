@@ -15,7 +15,8 @@
     "smoke": "tsx scripts/smoke.ts",
     "export": "tsx scripts/export-csv.ts",
     "e2e:ui": "tsx scripts/ui-e2e.ts",
-    "e2e:wallets": "tsx scripts/wallet-e2e.ts"
+    "e2e:wallets": "tsx scripts/wallet-e2e.ts",
+    "e2e:mobile": "tsx scripts/mobile-e2e.ts"
   },
   "dependencies": {
     "@coinbase/wallet-sdk": "4.4.0",

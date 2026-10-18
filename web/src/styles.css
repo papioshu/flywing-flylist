@@ -460,6 +460,7 @@ a {
 
 .pass__body {
   min-height: 150px;
+  min-width: 0; /* flex child: shrink to the panel instead of growing to its widest content */
 }
 
 .modal {
@@ -580,6 +581,14 @@ a {
 
 .link--light {
   color: var(--paper);
+}
+
+/* Touch screens (iPhone + Android): text buttons get a 48px-tall tap area (Android 48dp; Apple asks for 44) without changing
+   how they look; the extra height is empty space around the label. Checked by npm run e2e:mobile. */
+@media (pointer: coarse) {
+  .link {
+    min-height: 48px;
+  }
 }
 
 .picker__label,
@@ -758,6 +767,7 @@ a {
 
 .form {
   display: grid;
+  grid-template-columns: minmax(0, 1fr); /* never wider than the panel, even on a 320px iPhone SE */
   gap: 8px;
 }
 
@@ -962,14 +972,14 @@ a {
 
 @media (max-width: 760px) {
   .pass {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .wgrid {
     grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
     gap: 12px;
   }
   .flyfields {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .modal {
     padding: 12px 10px;
