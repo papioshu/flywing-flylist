@@ -1405,10 +1405,10 @@ export function createApp(deps: AppDeps) {
   }
 
   // Admin-added wallets can be taken off the list at any time. Self-registered ones use the Rejected status instead.
-  // shortcut: hard delete also drops that row's audit trail (FK cascade); add a tombstone table if removals need history.
+  // The row and its audit trail are copied into registration_removals (who, when, what) in the same statement as the delete.
   async function adminRemove(req: Request, id: string): Promise<Response> {
     await rateLimit(req, "admin");
-    await requireAdmin(req);
+    const session = await requireAdmin(req);
     if (!/^[0-9a-f-]{36}$/i.test(id)) throw new HttpError(404, "NOT_FOUND", "Registration not found.");
     const [row] = await db.query<{ verification_method: string }>(
       `select verification_method from allowlist.registrations where id = $1 and campaign_id = $2`,
@@ -1418,7 +1418,19 @@ export function createApp(deps: AppDeps) {
     if (row.verification_method !== "admin_import") {
       throw new HttpError(409, "NOT_ADMIN_ADDED", "Only wallets added by an admin can be removed. Set this one to Rejected instead.");
     }
-    await db.query(`delete from allowlist.registrations where id = $1 and campaign_id = $2`, [id, config.campaignId]);
+    await db.query(
+      `with tomb as (
+         insert into allowlist.registration_removals
+           (registration_id, campaign_id, wallet_address_normalized, twitter_username, actor_wallet, registration, audit, removed_at)
+         select r.id, r.campaign_id, r.wallet_address_normalized, r.twitter_username, $3, to_jsonb(r),
+                coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at) from allowlist.registration_audit a where a.registration_id = r.id), '[]'::jsonb),
+                $4::timestamptz
+         from allowlist.registrations r where r.id = $1 and r.campaign_id = $2
+         returning registration_id
+       )
+       delete from allowlist.registrations where id in (select registration_id from tomb)`,
+      [id, config.campaignId, session.wallet, now().toISOString()],
+    );
     return json(req, 200, { removed: true });
   }
 

@@ -65,6 +65,9 @@ describe("admin CSV import", () => {
     expect((await t.call("DELETE", `/admin/registrations/${imported.id}`, { token: userToken })).status).toBe(403);
     expect((await t.call("DELETE", `/admin/registrations/${imported.id}`, { token })).status).toBe(200);
     expect((await t.call("DELETE", `/admin/registrations/${imported.id}`, { token })).status).toBe(404);
+    const [tomb] = await t.db.query<any>(`select * from allowlist.registration_removals`);
+    expect(tomb).toMatchObject({ registration_id: imported.id, wallet_address_normalized: A, actor_wallet: t.admin.address.toLowerCase() });
+    expect(tomb.audit[0].action).toBe("admin_import");
     await t.db.query(`update allowlist.registrations set verification_method = 'siwe_eip4361', verification_chain_id = 1, verification_timestamp = now() where wallet_address_normalized = $1`, [B.toLowerCase()]);
     const [selfReg] = await t.db.query<any>(`select id from allowlist.registrations where wallet_address_normalized = $1`, [B.toLowerCase()]);
     expect((await t.call("DELETE", `/admin/registrations/${selfReg.id}`, { token })).status).toBe(409);
