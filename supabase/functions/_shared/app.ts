@@ -147,6 +147,8 @@ const centsToUsd = (c: bigint | string | null | undefined) => {
 };
 
 const MAX_BODY_BYTES = 10_000;
+const IMPORT_MAX_ROWS = 5_000;
+const IMPORT_MAX_BODY_BYTES = 600_000; // ~5,000 rows of wallet + handle + line number
 
 type Session = {
   tokenHash: string;
@@ -167,7 +169,7 @@ type RegistrationRow = {
   registration_status: string;
   registered_at: Date | string;
   updated_at: Date | string;
-  verification_chain_id: number;
+  verification_chain_id: number | null;
   verification_method: string;
   verification_timestamp: Date | string;
   eligibility_status: string;
@@ -399,7 +401,7 @@ export function createApp(deps: AppDeps) {
     if (origin && config.allowedOrigins.includes(origin)) {
       headers["Access-Control-Allow-Origin"] = origin;
       headers["Access-Control-Allow-Headers"] = "authorization, content-type";
-      headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, OPTIONS";
+      headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS";
       headers["Access-Control-Expose-Headers"] = "content-disposition";
       headers["Access-Control-Max-Age"] = "600";
     }
@@ -413,14 +415,14 @@ export function createApp(deps: AppDeps) {
     });
   }
 
-  async function readJson(req: Request): Promise<Record<string, unknown>> {
+  async function readJson(req: Request, maxBytes = MAX_BODY_BYTES): Promise<Record<string, unknown>> {
     const type = req.headers.get("content-type") ?? "";
     // Requiring JSON forces a CORS preflight, so other sites cannot submit forms here.
     if (!type.toLowerCase().startsWith("application/json")) {
       throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", "Expected application/json.");
     }
     const text = await req.text();
-    if (text.length > MAX_BODY_BYTES) throw new HttpError(413, "PAYLOAD_TOO_LARGE", "Request body too large.");
+    if (text.length > maxBytes) throw new HttpError(413, "PAYLOAD_TOO_LARGE", "Request body too large.");
     try {
       const body = JSON.parse(text);
       if (body && typeof body === "object" && !Array.isArray(body)) return body as Record<string, unknown>;
@@ -1349,6 +1351,77 @@ export function createApp(deps: AppDeps) {
     return json(req, 200, { registration: adminRegistration(full ?? rows[0]) });
   }
 
+  // Admin CSV import: the browser parses the file and sends rows; every row is validated here.
+  // Imported wallets skip the ETH check (owner, 2026-11-01) and land as approved.
+  async function adminImport(req: Request): Promise<Response> {
+    await rateLimit(req, "admin");
+    const session = await requireAdmin(req);
+    const body = await readJson(req, IMPORT_MAX_BODY_BYTES);
+    if (!Array.isArray(body.rows) || body.rows.length === 0) throw new HttpError(400, "INVALID_IMPORT", "No rows to import.");
+    if (body.rows.length > IMPORT_MAX_ROWS) throw new HttpError(400, "INVALID_IMPORT", `At most ${IMPORT_MAX_ROWS} rows per import.`);
+
+    const invalid: { line: number; reason: string }[] = [];
+    const seen = new Map<string, { wallet: string; walletNorm: string; handle: string; handleNorm: string }>();
+    let duplicateInFile = 0;
+    body.rows.forEach((raw: any, i: number) => {
+      const line = Number.isInteger(raw?.line) ? raw.line : i + 1;
+      const w = typeof raw?.wallet === "string" ? raw.wallet.trim() : "";
+      if (!/^0x[0-9a-fA-F]{40}$/.test(w)) return invalid.push({ line, reason: "invalid wallet address" });
+      const h = parseTwitterHandle(raw?.twitter);
+      if (!h.ok) return invalid.push({ line, reason: `X handle: ${h.error}` });
+      const walletNorm = w.toLowerCase();
+      if (seen.has(walletNorm)) return duplicateInFile++;
+      seen.set(walletNorm, { wallet: getAddress(walletNorm), walletNorm, handle: h.handle.display, handleNorm: h.handle.normalized });
+    });
+
+    let added = 0;
+    if (seen.size > 0) {
+      const { policyVersion } = await loadCampaignWithPolicy();
+      const rows = await db.query<{ id: string }>(
+        `with input as (
+           select * from jsonb_to_recordset($1::text::jsonb) as x("wallet" text, "walletNorm" text, "handle" text, "handleNorm" text)
+         ), ins as (
+           insert into allowlist.registrations (
+             campaign_id, wallet_address, wallet_address_normalized, twitter_username, twitter_username_normalized,
+             registered_at, updated_at, verification_method, registration_status, eligibility_status, access_method, policy_version
+           )
+           select $2, "wallet", "walletNorm", "handle", "handleNorm", $3::timestamptz, $3::timestamptz,
+                  'admin_import', 'approved', 'not_checked', 'open', $4
+           from input
+           on conflict (campaign_id, wallet_address_normalized) do nothing
+           returning id, twitter_username
+         ), aud as (
+           insert into allowlist.registration_audit (registration_id, actor_wallet, actor_role, action, changes, created_at)
+           select id, $5, 'admin', 'admin_import',
+                  jsonb_build_object('twitter_username', twitter_username, 'registration_status', 'approved'), $3::timestamptz
+           from ins
+         )
+         select id from ins`,
+        [JSON.stringify([...seen.values()]), config.campaignId, now().toISOString(), policyVersion, session.wallet],
+      );
+      added = rows.length;
+    }
+    return json(req, 200, { added, alreadyOnList: seen.size - added, duplicateInFile, invalid });
+  }
+
+  // Admin-added wallets can be taken off the list at any time. Self-registered ones use the Rejected status instead.
+  // shortcut: hard delete also drops that row's audit trail (FK cascade); add a tombstone table if removals need history.
+  async function adminRemove(req: Request, id: string): Promise<Response> {
+    await rateLimit(req, "admin");
+    await requireAdmin(req);
+    if (!/^[0-9a-f-]{36}$/i.test(id)) throw new HttpError(404, "NOT_FOUND", "Registration not found.");
+    const [row] = await db.query<{ verification_method: string }>(
+      `select verification_method from allowlist.registrations where id = $1 and campaign_id = $2`,
+      [id, config.campaignId],
+    );
+    if (!row) throw new HttpError(404, "NOT_FOUND", "Registration not found.");
+    if (row.verification_method !== "admin_import") {
+      throw new HttpError(409, "NOT_ADMIN_ADDED", "Only wallets added by an admin can be removed. Set this one to Rejected instead.");
+    }
+    await db.query(`delete from allowlist.registrations where id = $1 and campaign_id = $2`, [id, config.campaignId]);
+    return json(req, 200, { removed: true });
+  }
+
   async function adminAudit(req: Request, id: string): Promise<Response> {
     await rateLimit(req, "admin");
     await requireAdmin(req);
@@ -1831,6 +1904,7 @@ export function createApp(deps: AppDeps) {
     if (method === "GET" && path === "/admin/stats") return adminStats(req);
     if (method === "GET" && path === "/admin/registrations") return adminList(req, url);
     if (method === "GET" && path === "/admin/export.csv") return adminExport(req, url);
+    if (method === "POST" && path === "/admin/import") return adminImport(req);
     if (path === "/admin/policy") {
       if (method === "GET") return adminGetPolicy(req);
       if (method === "PATCH") return adminUpdatePolicy(req);
@@ -1852,6 +1926,7 @@ export function createApp(deps: AppDeps) {
     const one = /^\/admin\/registrations\/([^/]+)(\/audit)?$/.exec(path);
     if (one) {
       if (method === "PATCH" && !one[2]) return adminUpdate(req, one[1]);
+      if (method === "DELETE" && !one[2]) return adminRemove(req, one[1]);
       if (method === "GET" && one[2]) return adminAudit(req, one[1]);
     }
     throw new HttpError(404, "NOT_FOUND", "Not found.");

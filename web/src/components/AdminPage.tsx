@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAccount, useDisconnect, useSignMessage, useSwitchChain } from "wagmi";
 import { api, ApiError, download } from "../lib/api";
+import { parseImportCsv } from "../lib/csvImport";
 import { clearToken, getToken, isUserRejection, shortAddress, signIn } from "../lib/session";
 import { FALLBACK_CHAIN_ID, SUPPORTED_CHAIN_IDS } from "../lib/wagmi";
 import { AccessCodesPanel, CollectionsPanel, PolicyPanel, UsagePanel } from "./AdminSettings";
@@ -17,7 +18,8 @@ type Row = {
   eligibilityCheckedAt: string | null;
   registeredAt: string;
   updatedAt: string;
-  verificationChainId: number;
+  verificationChainId: number | null;
+  verificationMethod: string;
   adminNotes: string | null;
   accessMethod: string;
   eligibilityChainId: number | null;
@@ -211,6 +213,8 @@ function Registrations({ token, onAuthLost }: { token: string; onAuthLost: (msg:
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<string | null>(null);
   const [selected, setSelected] = useState<Row | null>(null);
 
   const [q, setQ] = useState("");
@@ -293,6 +297,30 @@ function Registrations({ token, onAuthLost }: { token: string; onAuthLost: (msg:
     }
   }
 
+  async function importCsv(file: File) {
+    setImporting(true);
+    setError(null);
+    setImportResult(null);
+    try {
+      const rows = parseImportCsv(await file.text());
+      if (rows.length === 0) throw new ApiError(400, "INVALID_IMPORT", "That CSV has no rows.");
+      const r = await api<{ added: number; alreadyOnList: number; duplicateInFile: number; invalid: { line: number; reason: string }[] }>(
+        "/admin/import",
+        { method: "POST", token, body: { rows } },
+      );
+      const bad = r.invalid.slice(0, 10).map((x) => `line ${x.line}: ${x.reason}`).join("; ");
+      setImportResult(
+        `Added ${r.added}. Already on the list: ${r.alreadyOnList}. Duplicates in file: ${r.duplicateInFile}. Skipped as invalid: ${r.invalid.length}` +
+          (bad ? ` (${bad}${r.invalid.length > 10 ? "; …" : ""})` : "") + ".",
+      );
+      await load();
+    } catch (e) {
+      handle(e);
+    } finally {
+      setImporting(false);
+    }
+  }
+
   function toggleSort(key: string) {
     if (sort === key) setDir(dir === "asc" ? "desc" : "asc");
     else {
@@ -322,6 +350,30 @@ function Registrations({ token, onAuthLost }: { token: string; onAuthLost: (msg:
           </button>
         ))}
       </div>
+      <div className="exports">
+        <span className="muted">Add wallets (CSV: wallet, X handle; skips the ETH check, lands approved):</span>
+        <label className="link">
+          {importing ? "Importing…" : "Import CSV"}
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            hidden
+            disabled={importing}
+            aria-label="Import CSV"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) importCsv(f);
+            }}
+          />
+        </label>
+        <AddWallet token={token} onAdded={load} onError={handle} />
+      </div>
+      {importResult && (
+        <p className="muted" role="status">
+          {importResult}
+        </p>
+      )}
 
       {stats && (
         <div className="stats">
@@ -463,9 +515,74 @@ function Registrations({ token, onAuthLost }: { token: string; onAuthLost: (msg:
             api<Stats>("/admin/stats", { token }).then(setStats).catch(() => undefined);
           }}
           onError={handle}
+          onRemoved={() => {
+            setSelected(null);
+            load();
+          }}
         />
       )}
     </>
+  );
+}
+
+// Single "Add wallet" form; goes through the same validated import endpoint as the CSV upload.
+function AddWallet({ token, onAdded, onError }: { token: string; onAdded: () => void; onError: (e: unknown) => void }) {
+  const [open, setOpen] = useState(false);
+  const [wallet, setWallet] = useState("");
+  const [twitter, setTwitter] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function save() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const r = await api<{ added: number; alreadyOnList: number; invalid: { reason: string }[] }>("/admin/import", {
+        method: "POST",
+        token,
+        body: { rows: [{ line: 1, wallet: wallet.trim(), twitter: twitter.trim() }] },
+      });
+      if (r.added === 1) {
+        setWallet("");
+        setTwitter("");
+        setMsg("Added as approved.");
+        onAdded();
+      } else setMsg(r.invalid[0] ? `Not added: ${r.invalid[0].reason}.` : "Not added: that wallet is already on the list.");
+    } catch (e) {
+      onError(e);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!open)
+    return (
+      <button className="link" onClick={() => setOpen(true)}>
+        + Add wallet
+      </button>
+    );
+  return (
+    <form
+      className="filters"
+      onSubmit={(e) => {
+        e.preventDefault();
+        save();
+      }}
+    >
+      <input className="field" placeholder="Wallet address (0x…)" value={wallet} onChange={(e) => setWallet(e.target.value)} aria-label="Wallet address" required />
+      <input className="field" placeholder="X handle" value={twitter} onChange={(e) => setTwitter(e.target.value)} aria-label="X handle" required />
+      <button className="btn btn--primary" type="submit" disabled={saving}>
+        {saving ? "Saving…" : "Save"}
+      </button>
+      <button className="link" type="button" onClick={() => setOpen(false)}>
+        Cancel
+      </button>
+      {msg && (
+        <span className="muted" role="status">
+          {msg}
+        </span>
+      )}
+    </form>
   );
 }
 
@@ -484,13 +601,26 @@ function Editor({
   onClose,
   onSaved,
   onError,
+  onRemoved,
 }: {
   row: Row;
   token: string;
   onClose: () => void;
   onSaved: (r: Row) => void;
   onError: (e: unknown) => void;
+  onRemoved: () => void;
 }) {
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  async function remove() {
+    setSaving(true);
+    try {
+      await api(`/admin/registrations/${row.id}`, { method: "DELETE", token });
+      onRemoved();
+    } catch (e) {
+      onError(e);
+      setSaving(false);
+    }
+  }
   const [status, setStatus] = useState(row.registrationStatus);
   const [eligibility, setEligibility] = useState(row.eligibilityStatus);
   const [notes, setNotes] = useState(row.adminNotes ?? "");
@@ -547,7 +677,7 @@ function Editor({
         <dt>Access method</dt>
         <dd className="mono">{row.accessMethod}</dd>
         <dt>Signed in on chain</dt>
-        <dd className="mono">{row.verificationChainId}</dd>
+        <dd className="mono">{row.verificationChainId ?? "— (admin import)"}</dd>
         <dt>ETH balance</dt>
         <dd className="mono">
           {row.ethBalanceEth ?? "—"} ETH{row.ethBalanceWei ? ` (${row.ethBalanceWei} wei)` : ""}
@@ -609,6 +739,11 @@ function Editor({
       <button className="btn btn--primary" onClick={save} disabled={saving}>
         {saving ? "Saving…" : "Save changes"}
       </button>
+      {row.verificationMethod === "admin_import" && (
+        <button className="link" onClick={() => (confirmRemove ? remove() : setConfirmRemove(true))} disabled={saving}>
+          {confirmRemove ? "Click again to remove from the FLYLIST" : "Remove from list"}
+        </button>
+      )}
 
       <h3 className="drawer__sub">History</h3>
       {!audit && <p className="muted">Loading…</p>}
